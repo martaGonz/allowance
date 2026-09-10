@@ -1,0 +1,422 @@
+<title>Allowance — panel</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d12;
+    --panel: #12151d;
+    --panel-2: #171b26;
+    --border: #262b3a;
+    --text: #e8ebf3;
+    --muted: #8a90a6;
+    --green: #35d08a;
+    --amber: #f0b84f;
+    --red: #ef5a6f;
+    --blue: #5aa9ef;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 28px 36px 60px;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+  }
+
+  header .tagline {
+    color: var(--muted);
+    font-size: 15px;
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 20px;
+  }
+
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+  }
+
+  section h2 {
+    margin: 0 0 14px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .budget { grid-column: 1 / -1; }
+
+  .remaining-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  #remaining {
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #remaining.low { color: var(--amber); }
+  #remaining.burned, #remaining.exhausted { color: var(--red); }
+
+  .of-total {
+    color: var(--muted);
+    font-size: 16px;
+  }
+
+  .badges { display: flex; gap: 8px; }
+
+  .badge {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .badge.burned { background: rgba(239, 90, 111, 0.18); color: var(--red); }
+  .badge.stopped { background: rgba(240, 184, 79, 0.18); color: var(--amber); }
+
+  .bar-track {
+    margin-top: 14px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--panel-2);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--blue));
+    width: 100%;
+    transition: width 0.4s ease;
+  }
+
+  .bar-fill.low { background: var(--amber); }
+  .bar-fill.empty { background: var(--red); }
+
+  #revoke-btn {
+    margin-top: 18px;
+    width: 100%;
+    padding: 16px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: white;
+    background: var(--red);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+
+  #revoke-btn:hover:not(:disabled) { filter: brightness(1.1); }
+  #revoke-btn:disabled { background: var(--panel-2); color: var(--muted); cursor: default; }
+
+  .level-pill {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.03em;
+    margin-bottom: 10px;
+  }
+
+  .level-pill.ok { background: rgba(53, 208, 138, 0.18); color: var(--green); }
+  .level-pill.vigilar { background: rgba(240, 184, 79, 0.18); color: var(--amber); }
+  .level-pill.actuar { background: rgba(239, 90, 111, 0.18); color: var(--red); }
+  .level-pill.pendiente { background: var(--panel-2); color: var(--muted); }
+
+  #analyst-summary { margin: 0; line-height: 1.5; }
+
+  .analyst-note {
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  td { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+
+  td.price { text-align: right; font-variant-numeric: tabular-nums; color: var(--blue); font-weight: 600; }
+
+  .log { grid-column: 1 / -1; max-height: 340px; overflow-y: auto; }
+
+  #log-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  #log-list li {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    border-left: 3px solid var(--border);
+  }
+
+  #log-list li.paid { border-left-color: var(--green); }
+  #log-list li.refused { border-left-color: var(--red); color: #f3c6cc; }
+  #log-list li.error { border-left-color: var(--red); }
+  #log-list li.considered { border-left-color: var(--blue); color: var(--muted); }
+  #log-list li.stopped { border-left-color: var(--amber); color: var(--amber); font-weight: 600; }
+
+  .hidden { display: none !important; }
+</style>
+
+<header>
+  <h1>Allowance</h1>
+  <div class="tagline">Un agente que gasta de una paga acotada y se para solo</div>
+</header>
+
+<main>
+  <section class="budget">
+    <h2>Presupuesto restante</h2>
+    <div class="remaining-row">
+      <div>
+        <div id="remaining">$0.000000</div>
+        <div class="of-total">de <span id="amount">$0.000000</span> emitidos</div>
+      </div>
+      <div class="badges">
+        <span id="badge-burned" class="badge burned hidden">QUEMADA</span>
+        <span id="badge-stopped" class="badge stopped hidden"></span>
+      </div>
+    </div>
+    <div class="bar-track"><div id="bar-fill" class="bar-fill"></div></div>
+    <button id="revoke-btn">Revocar la paga</button>
+  </section>
+
+  <section class="analyst">
+    <h2>Analista</h2>
+    <div id="analyst-level" class="level-pill pendiente">SIN DATOS</div>
+    <p id="analyst-summary">Esperando el primer dato pagado…</p>
+    <p id="analyst-note" class="analyst-note hidden"></p>
+  </section>
+
+  <section class="prices">
+    <h2>Precio por consulta</h2>
+    <table><tbody id="price-table-body"></tbody></table>
+  </section>
+
+  <section class="log">
+    <h2>Decisiones y pagos</h2>
+    <ol id="log-list"></ol>
+  </section>
+</main>
+
+<script>
+  (function () {
+    'use strict';
+
+    var TOOL_NAMES = { token_price: 'Precio del token', position_state: 'Estado de la posición' };
+    var LOG_LIMIT = 150;
+
+    var els = {
+      remaining: document.getElementById('remaining'),
+      amount: document.getElementById('amount'),
+      barFill: document.getElementById('bar-fill'),
+      badgeBurned: document.getElementById('badge-burned'),
+      badgeStopped: document.getElementById('badge-stopped'),
+      revokeBtn: document.getElementById('revoke-btn'),
+      analystLevel: document.getElementById('analyst-level'),
+      analystSummary: document.getElementById('analyst-summary'),
+      analystNote: document.getElementById('analyst-note'),
+      priceTableBody: document.getElementById('price-table-body'),
+      logList: document.getElementById('log-list'),
+    };
+
+    var state = { amountMicroUsdc: 0, remainingMicroUsdc: 0, burned: false, prices: {} };
+
+    function usd(micro) {
+      return '$' + (micro / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+    }
+
+    function toolLabel(tool) {
+      return TOOL_NAMES[tool] || tool;
+    }
+
+    function renderBudget() {
+      els.remaining.textContent = usd(state.remainingMicroUsdc);
+      els.amount.textContent = usd(state.amountMicroUsdc);
+      var ratio = state.amountMicroUsdc > 0 ? state.remainingMicroUsdc / state.amountMicroUsdc : 0;
+      els.barFill.style.width = Math.max(0, Math.min(1, ratio)) * 100 + '%';
+      els.remaining.classList.toggle('low', ratio > 0 && ratio <= 0.2);
+      els.remaining.classList.toggle('exhausted', ratio <= 0);
+      els.barFill.classList.toggle('low', ratio > 0 && ratio <= 0.2);
+      els.barFill.classList.toggle('empty', ratio <= 0);
+
+      els.badgeBurned.classList.toggle('hidden', !state.burned);
+      els.revokeBtn.disabled = state.burned;
+      els.revokeBtn.textContent = state.burned ? 'Paga revocada' : 'Revocar la paga';
+    }
+
+    function renderPrices() {
+      var rows = Object.keys(state.prices)
+        .sort()
+        .map(function (tool) {
+          return (
+            '<tr><td>' + toolLabel(tool) + '</td><td class="price">' + usd(state.prices[tool]) + '</td></tr>'
+          );
+        });
+      els.priceTableBody.innerHTML = rows.join('') || '<tr><td colspan="2">Aún no se ha considerado ninguna consulta.</td></tr>';
+    }
+
+    function addLogLine(cls, text) {
+      var li = document.createElement('li');
+      li.className = cls;
+      li.textContent = text;
+      els.logList.insertBefore(li, els.logList.firstChild);
+      while (els.logList.children.length > LOG_LIMIT) {
+        els.logList.removeChild(els.logList.lastChild);
+      }
+    }
+
+    function setAnalyst(level, summary) {
+      els.analystLevel.className = 'level-pill ' + level;
+      els.analystLevel.textContent = level.toUpperCase();
+      els.analystSummary.textContent = summary;
+      els.analystNote.classList.add('hidden');
+    }
+
+    function setAnalystNote(text) {
+      els.analystNote.textContent = text;
+      els.analystNote.classList.remove('hidden');
+    }
+
+    var STOPPED_LABEL = {
+      exhausted: 'se agotó la paga',
+      expired: 'la paga venció',
+      burned: 'la paga fue revocada',
+      max_rounds: 'se alcanzó el límite de rondas',
+    };
+
+    function handleEvent(event, isReplay) {
+      switch (event.kind) {
+        case 'considered': {
+          state.prices[event.tool] = event.priceMicroUsdc;
+          renderPrices();
+          if (event.decision.pay) {
+            addLogLine('considered', toolLabel(event.tool) + ' — ' + usd(event.priceMicroUsdc) + ' — se paga');
+          } else {
+            var reason = event.decision.reason === 'too_expensive' ? 'demasiado caro ahora mismo' : 'el dato sigue fresco';
+            addLogLine('refused', toolLabel(event.tool) + ' — ' + usd(event.priceMicroUsdc) + ' — RECHAZADA (' + reason + ')');
+          }
+          break;
+        }
+        case 'paid': {
+          state.remainingMicroUsdc = event.remainingMicroUsdc;
+          renderBudget();
+          addLogLine('paid', toolLabel(event.tool) + ' pagado — tx ' + (event.txId || 'sin tx') + ' — quedan ' + usd(event.remainingMicroUsdc));
+          break;
+        }
+        case 'failed': {
+          addLogLine('error', toolLabel(event.tool) + ' falló: ' + event.error);
+          break;
+        }
+        case 'settle_failed': {
+          addLogLine('error', 'liquidación de ' + toolLabel(event.tool) + ' falló: ' + event.error);
+          break;
+        }
+        case 'analyzed': {
+          setAnalyst(event.level, event.summary);
+          addLogLine('considered', 'analista: ' + event.level.toUpperCase() + ' — ' + event.summary);
+          break;
+        }
+        case 'analysis_refused': {
+          setAnalystNote('el analista rechazó responder a esta ronda.');
+          break;
+        }
+        case 'analysis_failed': {
+          setAnalystNote('el analista falló: ' + event.error);
+          break;
+        }
+        case 'stopped': {
+          var label = STOPPED_LABEL[event.reason] || event.reason;
+          els.badgeStopped.textContent = 'PARADO: ' + label;
+          els.badgeStopped.classList.remove('hidden');
+          addLogLine('stopped', 'PARADO — ' + label);
+          if (!isReplay) refreshState();
+          break;
+        }
+      }
+    }
+
+    function refreshState() {
+      fetch('/state')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          state.amountMicroUsdc = data.note.amountMicroUsdc;
+          state.remainingMicroUsdc = data.note.amountMicroUsdc - data.note.spentMicroUsdc;
+          state.burned = data.note.burned;
+          renderBudget();
+        })
+        .catch(function () {
+          /* el panel sigue mostrando el último estado conocido si /state falla */
+        });
+    }
+
+    function loadInitialState() {
+      fetch('/state')
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          state.amountMicroUsdc = data.note.amountMicroUsdc;
+          state.remainingMicroUsdc = data.note.amountMicroUsdc - data.note.spentMicroUsdc;
+          state.burned = data.note.burned;
+          renderBudget();
+          data.events.forEach(function (event) { handleEvent(event, true); });
+        });
+    }
+
+    function connect() {
+      var source = new EventSource('/events');
+      source.onmessage = function (e) { handleEvent(JSON.parse(e.data), false); };
+    }
+
+    els.revokeBtn.addEventListener('click', function () {
+      els.revokeBtn.disabled = true;
+      fetch('/burn', { method: 'POST' })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          state.burned = data.note.burned;
+          state.remainingMicroUsdc = data.note.amountMicroUsdc - data.note.spentMicroUsdc;
+          renderBudget();
+        });
+    });
+
+    renderBudget();
+    renderPrices();
+    loadInitialState();
+    connect();
+  })();
+</script>
