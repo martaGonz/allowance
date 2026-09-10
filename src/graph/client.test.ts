@@ -35,4 +35,9 @@ describe('cliente de The Graph', () => {
     const f = fakeFetch({ message: 'nope' }, 500);
     await expect(fetchTokenPrice(client(f as any), '0xa')).rejects.toThrow('Token API 500');
   });
+
+  it('lanza si la fecha del precio no se puede interpretar, para no dar por fresco un dato sin fecha', async () => {
+    const f = fakeFetch({ data: [{ address: '0xa', price_usd: 1, datetime: 'no-es-una-fecha' }] });
+    await expect(fetchTokenPrice(client(f as any), '0xa')).rejects.toThrow('fecha inválida para 0xa');
+  });
 });

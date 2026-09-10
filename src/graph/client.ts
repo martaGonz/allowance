@@ -46,5 +46,7 @@ export async function fetchTokenPrice(client: GraphClient, contract: string): Pr
   const body = await res.json() as { data?: Array<{ address: string; price_usd: number; datetime: string }> };
   const row = body.data?.[0];
   if (!row) throw new Error(`sin precio para ${contract}`);
-  return { contract: row.address, priceUsd: row.price_usd, asOf: Date.parse(row.datetime + 'Z') };
+  const asOf = Date.parse(row.datetime + 'Z');
+  if (Number.isNaN(asOf)) throw new Error(`fecha inválida para ${contract}`);
+  return { contract: row.address, priceUsd: row.price_usd, asOf };
 }
