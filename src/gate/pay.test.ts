@@ -242,4 +242,68 @@ describe('payAndRetry paga de verdad, sin red (firma local, nada se somete a Hed
     }
     expect(sentAmounts).not.toContain('999999');
   });
+
+  // Hallazgo crítico 1 de la revisión de rama completa: `@x402/hono` solo liquida en 2xx. Un
+  // 402 real de la puerta (`payAndRetry` primera respuesta) nunca llega aquí — ya lanza antes
+  // (prueba "sin credenciales..." más arriba). Lo que faltaba cubrir es el REINTENTO ya
+  // pagado: si ese reintento no es 2xx, o es 2xx pero sin PAYMENT-RESPONSE, nada se liquidó de
+  // verdad en Hedera y el envoltorio no puede devolverlo como si fuera un pago exitoso.
+  it('el reintento pagado responde 500: payAndRetry lanza en vez de devolver el error como pago', async () => {
+    const requiredHeader = await unpaid402Header(singleOfferRoutes('2000'));
+    globalThis.fetch = vi.fn(async () => {
+      const fn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      if (fn.mock.calls.length === 1) {
+        return new Response('pago requerido', { status: 402, headers: { 'PAYMENT-REQUIRED': requiredHeader } });
+      }
+      return new Response('error interno', { status: 500 });
+    }) as unknown as typeof fetch;
+
+    await expect(payAndRetry(GATE_URL, 2_000)).rejects.toThrow(/500/);
+  });
+
+  it('el reintento pagado responde 402 (la puerta lo rechazó otra vez): payAndRetry lanza', async () => {
+    const requiredHeader = await unpaid402Header(singleOfferRoutes('2000'));
+    globalThis.fetch = vi.fn(async () => {
+      const fn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      if (fn.mock.calls.length === 1) {
+        return new Response('pago requerido', { status: 402, headers: { 'PAYMENT-REQUIRED': requiredHeader } });
+      }
+      return new Response('pago requerido de nuevo', { status: 402 });
+    }) as unknown as typeof fetch;
+
+    await expect(payAndRetry(GATE_URL, 2_000)).rejects.toThrow(/402/);
+  });
+
+  it('el reintento pagado responde 200 pero sin cabecera PAYMENT-RESPONSE: el middleware no liquidó, payAndRetry lanza', async () => {
+    const requiredHeader = await unpaid402Header(singleOfferRoutes('2000'));
+    globalThis.fetch = vi.fn(async () => {
+      const fn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      if (fn.mock.calls.length === 1) {
+        return new Response('pago requerido', { status: 402, headers: { 'PAYMENT-REQUIRED': requiredHeader } });
+      }
+      return new Response('{"priceUsd":1}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await expect(payAndRetry(GATE_URL, 2_000)).rejects.toThrow(/PAYMENT-RESPONSE/);
+  });
+
+  it('el reintento pagado trae una PAYMENT-RESPONSE que no decodifica: no lanza, txId es null y receiptError explica por qué', async () => {
+    const requiredHeader = await unpaid402Header(singleOfferRoutes('2000'));
+    globalThis.fetch = vi.fn(async () => {
+      const fn = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      if (fn.mock.calls.length === 1) {
+        return new Response('pago requerido', { status: 402, headers: { 'PAYMENT-REQUIRED': requiredHeader } });
+      }
+      return new Response('{"priceUsd":1}', {
+        status: 200,
+        headers: { 'PAYMENT-RESPONSE': 'esto-no-es-una-cabecera-valida-@@@' },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await payAndRetry(GATE_URL, 2_000);
+
+    expect(result.status).toBe(200);
+    expect(result.txId).toBeNull();
+    expect(result.receiptError).toBeTruthy();
+  });
 });

@@ -322,7 +322,7 @@ describe('bucle del agente', () => {
     expect(refs).toEqual(['tx-real']);
   });
 
-  it('sin txId, settle recibe una ref determinista de herramienta + ronda', async () => {
+  it('sin txId, settle recibe una ref determinista de nota + herramienta + ronda', async () => {
     const note = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
     const refs: string[] = [];
 
@@ -339,7 +339,119 @@ describe('bucle del agente', () => {
       }),
     );
 
-    expect(refs).toEqual(['token_price-1']);
+    // Hallazgo importante 2: `${tool.name}-${round}` a secas colisiona entre dos ejecuciones
+    // distintas que comparten herramienta y ronda (misma clave de idempotencia en Circle para
+    // dos notas distintas). Prefijar con el id de la nota (UUID fresco por ejecución, leído de
+    // la nota EN VIVO) lo hace único por ejecución.
+    expect(refs).toEqual([`${note.id}-token_price-1`]);
+  });
+
+  it('dos notas distintas con la misma herramienta y ronda producen refs distintas (sin colisión de idempotencia)', async () => {
+    const noteA = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+    const noteB = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+    const refsA: string[] = [];
+    const refsB: string[] = [];
+
+    await collect(
+      baseDeps({
+        notes: createNoteStore(noteA),
+        tools: [priceTool],
+        pay: async () => ({ status: 200, body: '{}', txId: null }),
+        settle: async (_amount, ref) => {
+          refsA.push(ref);
+          return '0xhash';
+        },
+        maxRounds: 1,
+      }),
+    );
+    await collect(
+      baseDeps({
+        notes: createNoteStore(noteB),
+        tools: [priceTool],
+        pay: async () => ({ status: 200, body: '{}', txId: null }),
+        settle: async (_amount, ref) => {
+          refsB.push(ref);
+          return '0xhash';
+        },
+        maxRounds: 1,
+      }),
+    );
+
+    expect(refsA).not.toEqual(refsB);
+  });
+
+  it('cuando pay resuelve con un status no-2xx (500), no comete débito, no liquida, no emite paid, y espera', async () => {
+    const note = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+    const store = createNoteStore(note);
+    let settleCalls = 0;
+    let waitCalls = 0;
+
+    const events = await collect(
+      baseDeps({
+        notes: store,
+        tools: [priceTool],
+        pay: async () => ({ status: 500, body: 'error interno', txId: null }),
+        settle: async () => {
+          settleCalls += 1;
+          return '0xhash';
+        },
+        wait: async () => {
+          waitCalls += 1;
+        },
+        maxRounds: 1,
+      }),
+    );
+
+    expect(remaining(store.get())).toBe(10_000);
+    expect(settleCalls).toBe(0);
+    expect(events.filter((e) => e.kind === 'paid')).toHaveLength(0);
+    expect(events.some((e) => e.kind === 'failed')).toBe(true);
+    expect(waitCalls).toBeGreaterThan(0);
+  });
+
+  it('cuando pay resuelve con un status no-2xx (402, la puerta lo rechazó de nuevo), no comete débito, no liquida, no emite paid, y espera', async () => {
+    const note = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+    const store = createNoteStore(note);
+    let settleCalls = 0;
+    let waitCalls = 0;
+
+    const events = await collect(
+      baseDeps({
+        notes: store,
+        tools: [priceTool],
+        pay: async () => ({ status: 402, body: 'pago requerido', txId: null }),
+        settle: async () => {
+          settleCalls += 1;
+          return '0xhash';
+        },
+        wait: async () => {
+          waitCalls += 1;
+        },
+        maxRounds: 1,
+      }),
+    );
+
+    expect(remaining(store.get())).toBe(10_000);
+    expect(settleCalls).toBe(0);
+    expect(events.filter((e) => e.kind === 'paid')).toHaveLength(0);
+    expect(events.some((e) => e.kind === 'failed')).toBe(true);
+    expect(waitCalls).toBeGreaterThan(0);
+  });
+
+  it('un receiptError del pago se propaga en el evento paid', async () => {
+    const note = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+
+    const events = await collect(
+      baseDeps({
+        notes: createNoteStore(note),
+        tools: [priceTool],
+        pay: async () => ({ status: 200, body: '{}', txId: null, receiptError: 'cabecera PAYMENT-RESPONSE inválida' }),
+        maxRounds: 1,
+      }),
+    );
+
+    const paid = events.find((e) => e.kind === 'paid');
+    expect(paid).toMatchObject({ receiptError: 'cabecera PAYMENT-RESPONSE inválida' });
   });
 
   it('llama al analista tras una ronda con al menos un pago, con los hechos correctos', async () => {

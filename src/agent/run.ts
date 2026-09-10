@@ -13,7 +13,7 @@ const WAIT_INTERVAL_MS = 5_000;
 
 export type AgentEvent =
   | { kind: 'considered'; tool: string; priceMicroUsdc: number; decision: Decision }
-  | { kind: 'paid'; tool: string; txId: string | null; remainingMicroUsdc: number }
+  | { kind: 'paid'; tool: string; txId: string | null; remainingMicroUsdc: number; receiptError?: string }
   | { kind: 'failed'; tool: string; error: string }
   | { kind: 'settle_failed'; tool: string; error: string }
   | { kind: 'analyzed'; level: AnalystLevel; summary: string }
@@ -37,7 +37,10 @@ export type AgentDeps = {
   /** La posición y el token que el agente vigila. */
   watch: { positionId: string; tokenContract: string };
   /** Envoltorio inyectado — nunca las funciones tal cual. */
-  pay: (tool: ToolSpec, args: Record<string, string>) => Promise<{ status: number; body: string; txId: string | null }>;
+  pay: (
+    tool: ToolSpec,
+    args: Record<string, string>,
+  ) => Promise<{ status: number; body: string; txId: string | null; receiptError?: string }>;
   /** Settle exige una ref para su clave de idempotencia. */
   settle: (amountMicroUsdc: number, ref: string) => Promise<string>;
   /** Esperar no es pararse; el temporizador real vive en main.ts. */
@@ -112,13 +115,26 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
       }
 
       const args = buildArgs(tool, deps.watch, lastPosition);
-      let result: { status: number; body: string; txId: string | null };
+      let result: { status: number; body: string; txId: string | null; receiptError?: string };
       try {
         result = await deps.pay(tool, args);
       } catch (error) {
         // El pago falló: no se confirma nada en la nota, se sigue con la siguiente
         // herramienta como si esta ronda nunca hubiera intentado comprarla.
         yield { kind: 'failed', tool: tool.name, error: String(error) };
+        continue;
+      }
+
+      // Corrección crítica 1 (revisión de rama completa): `payAndRetry` puede devolver un
+      // resultado con status no-2xx como VALOR en vez de lanzar (un 402 si la puerta lo
+      // rechazó de nuevo, un 5xx del handler o de un settle que falló dentro de la puerta).
+      // `@x402/hono` solo liquida en 2xx, así que un status fuera de ese rango significa que
+      // NADA se movió de verdad en Hedera — tratarlo como pago (como hacía antes este código)
+      // confirmaría un débito fantasma y liquidaría en Arc por dinero que nunca salió. Se
+      // trata exactamente igual que el pago que lanza justo arriba: `failed` y se sigue, sin
+      // tocar la nota, sin liquidar, sin marcar `paidSomething`.
+      if (result.status < 200 || result.status >= 300) {
+        yield { kind: 'failed', tool: tool.name, error: `la puerta respondió status ${result.status}: no se pagó nada` };
         continue;
       }
 
@@ -135,11 +151,13 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
       const live = deps.notes.get();
       const committed = { ...live, spentMicroUsdc: live.spentMicroUsdc + tool.priceMicroUsdc };
       deps.notes.set(committed);
-      paidSomething = true;
 
-      // Ref para la clave de idempotencia de settle — el txId real del pago
-      // x402 si lo hay, o si no un identificador determinista de intento (herramienta + ronda).
-      const ref = result.txId ?? `${tool.name}-${round}`;
+      // Hallazgo importante 2: `${tool.name}-${round}` a secas colisiona entre dos ejecuciones
+      // distintas que comparten herramienta y ronda — la clave de idempotencia de Circle sale
+      // solo de esta ref, así que dos notas distintas podrían pisarse la liquidación. Se
+      // prefija con el id de la nota (UUID fresco por ejecución, leído de la nota EN VIVO, no
+      // de una constante) para que la ref sea única por ejecución incluso sin txId real.
+      const ref = result.txId ?? `${live.id}-${tool.name}-${round}`;
       try {
         await deps.settle(tool.priceMicroUsdc, ref);
       } catch (error) {
@@ -151,6 +169,8 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
       // El pago ya sucedió y el débito ya se confirmó arriba, así que un
       // cuerpo que no parsea es un evento `failed` (nunca un débito fantasma ni uno
       // perdido) — el dinero ya salió, simplemente no se pudo leer el dato comprado.
+      // Corrección crítica 1: `paidSomething` solo se marca aquí, tras un parseo con éxito —
+      // es la única prueba de que de verdad se obtuvo un dato con este pago.
       try {
         const parsed: unknown = JSON.parse(result.body);
         if (tool.name === 'position_state') {
@@ -160,7 +180,14 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
           lastPrices.set(price.contract, price);
         }
         lastSeen.set(tool.name, deps.now());
-        yield { kind: 'paid', tool: tool.name, txId: result.txId, remainingMicroUsdc: remaining(committed) };
+        paidSomething = true;
+        yield {
+          kind: 'paid',
+          tool: tool.name,
+          txId: result.txId,
+          remainingMicroUsdc: remaining(committed),
+          ...(result.receiptError !== undefined ? { receiptError: result.receiptError } : {}),
+        };
       } catch (error) {
         yield { kind: 'failed', tool: tool.name, error: String(error) };
       }

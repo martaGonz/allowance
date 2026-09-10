@@ -3,7 +3,14 @@ import { ExactHederaScheme } from '@x402/hedera/exact/client';
 import { createClientHederaSigner, PrivateKey } from '@x402/hedera';
 import { HEDERA_TESTNET_NETWORK, HEDERA_TESTNET_USDC } from './routes.js';
 
-export type PayAndRetryResult = { status: number; body: string; txId: string | null };
+export type PayAndRetryResult = {
+  status: number;
+  body: string;
+  txId: string | null;
+  /** Presente solo si la puerta liquidó (2xx con PAYMENT-RESPONSE) pero esa cabecera no
+   * decodificó — nunca si el pago no se liquidó en absoluto (eso lanza, no se devuelve). */
+  receiptError?: string;
+};
 
 /**
  * Paga una llamada a la puerta x402 y reintenta. Nunca simula un pago: la
@@ -67,13 +74,36 @@ export async function payAndRetry(url: string, priceMicroUsdc: number): Promise<
   const paid = await fetch(url, { headers: paymentHeaders });
   const body = await paid.text();
 
+  // Hallazgo crítico 1 de la revisión de rama completa: `@x402/hono` solo liquida en 2xx. Un
+  // handler que revienta en 5xx, o un settle que falla dentro de la puerta, vuelve como 4xx/5xx
+  // sin PAYMENT-RESPONSE — y entonces NADA se movió de verdad en Hedera. Devolver esa respuesta
+  // como si fuera un pago (como hacía antes este código) deja que run.ts confirme un débito y
+  // liquide en Arc por un pago que nunca ocurrió. Se lanza en los dos casos en vez de devolver
+  // un resultado "pagado" a medias.
+  if (paid.status < 200 || paid.status >= 300) {
+    throw new Error(
+      `el pago x402 se envió pero la puerta respondió ${paid.status} en el reintento pagado: no se liquidó nada en Hedera`,
+    );
+  }
+
+  const paymentResponseHeader = paid.headers.get('PAYMENT-RESPONSE');
+  if (!paymentResponseHeader) {
+    throw new Error(
+      `la puerta respondió ${paid.status} sin cabecera PAYMENT-RESPONSE: el middleware x402 no liquidó el pago`,
+    );
+  }
+
+  // A partir de aquí SÍ hubo una liquidación 2xx con PAYMENT-RESPONSE — el pago es real y no se
+  // deshace. Que esa cabecera no decodifique (dato malformado, nunca "no hubo pago") es un
+  // problema de recibo, no de pago: se informa vía `receiptError` en vez de lanzar.
   let txId: string | null = null;
+  let receiptError: string | undefined;
   try {
     const settleResponse = httpClient.getPaymentSettleResponse((name) => paid.headers.get(name));
     txId = settleResponse.transaction || null;
-  } catch {
-    txId = null;
+  } catch (error) {
+    receiptError = String(error);
   }
 
-  return { status: paid.status, body, txId };
+  return receiptError === undefined ? { status: paid.status, body, txId } : { status: paid.status, body, txId, receiptError };
 }
