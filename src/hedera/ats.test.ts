@@ -124,8 +124,12 @@ describe('buildBondData', () => {
   });
 });
 
-/** Cliente viem falso: registra cada llamada a writeContract y sirve un recibo prefabricado. */
-function fakeDeps(receiptLogs: { address: Hex; topics: Hex[]; data: Hex }[]): {
+/** Cliente viem falso: registra cada llamada a writeContract y sirve un recibo prefabricado.
+ * `status` por defecto es 'success' — las pruebas de recibo revertido lo sobreescriben. */
+function fakeDeps(
+  receiptLogs: { address: Hex; topics: Hex[]; data: Hex }[],
+  status: 'success' | 'reverted' = 'success',
+): {
   deps: AtsDeps;
   calls: AtsWriteContractCall[];
 } {
@@ -133,7 +137,7 @@ function fakeDeps(receiptLogs: { address: Hex; topics: Hex[]; data: Hex }[]): {
   let nextHash = 1;
   const deps: AtsDeps = {
     publicClient: {
-      waitForTransactionReceipt: async () => ({ logs: receiptLogs }),
+      waitForTransactionReceipt: async () => ({ logs: receiptLogs, status }),
     },
     walletClient: {
       account: { address: ISSUER },
@@ -197,6 +201,73 @@ describe('issueNoteOnChain', () => {
 
     await expect(issueNoteOnChain(deps, note, AGENT)).rejects.toThrow();
   });
+
+  // Hallazgo importante 5 de la revisión de rama completa: antes de este arreglo,
+  // `issueNoteOnChain` devolvía el hash de `issue()` sin esperar su recibo, y el recibo del
+  // propio `deployBond()` se usaba solo para leer sus logs — nunca se comprobaba `status`. Una
+  // transacción revertida en Hedera puede tardar en confirmarse igual que una exitosa: sin
+  // este chequeo, `main.ts` publicaría `issued_onchain` (y el agente empezaría a gastar) con
+  // un bono que nunca se desplegó de verdad.
+  it('lanza si el recibo del despliegue revirtió (status !== success), sin llegar a llamar a issue()', async () => {
+    const note = createNote({ amountMicroUsdc: 1_000_000, expiresAt: EXPIRES_AT });
+    const { bondData, regulationData } = buildBondData({
+      amountMicroUsdc: note.amountMicroUsdc,
+      expiresAt: note.expiresAt,
+      issuer: ISSUER,
+      now: NOW,
+    });
+    const bondDeployedEvent = FACTORY_ABI[1];
+    const nonIndexedInputs = bondDeployedEvent.inputs.filter((input) => !input.indexed);
+    const topics = encodeEventTopics({ abi: FACTORY_ABI, eventName: 'BondDeployed', args: { deployer: ISSUER } });
+    const data = encodeAbiParameters(nonIndexedInputs, [BOND_ADDRESS, bondData, regulationData]);
+    // El evento SÍ está presente en el recibo (para aislar el chequeo de status del chequeo de
+    // evento cubierto por la prueba anterior) — solo `status` marca la reversión.
+    const { deps, calls } = fakeDeps([{ address: BOND_ADDRESS, topics: topics as Hex[], data }], 'reverted');
+
+    await expect(issueNoteOnChain(deps, note, AGENT)).rejects.toThrow();
+    expect(calls).toHaveLength(1); // deployBond se llamó, issue() nunca — el recibo revertido corta antes
+  });
+
+  it('lanza si el recibo de issue() revirtió, aunque el despliegue haya tenido éxito', async () => {
+    const note = createNote({ amountMicroUsdc: 1_000_000, expiresAt: EXPIRES_AT });
+    const { bondData, regulationData } = buildBondData({
+      amountMicroUsdc: note.amountMicroUsdc,
+      expiresAt: note.expiresAt,
+      issuer: ISSUER,
+      now: NOW,
+    });
+    const bondDeployedEvent = FACTORY_ABI[1];
+    const nonIndexedInputs = bondDeployedEvent.inputs.filter((input) => !input.indexed);
+    const topics = encodeEventTopics({ abi: FACTORY_ABI, eventName: 'BondDeployed', args: { deployer: ISSUER } });
+    const data = encodeAbiParameters(nonIndexedInputs, [BOND_ADDRESS, bondData, regulationData]);
+
+    const calls: AtsWriteContractCall[] = [];
+    let nextHash = 1;
+    let receiptCalls = 0;
+    const deps: AtsDeps = {
+      publicClient: {
+        waitForTransactionReceipt: async () => {
+          receiptCalls += 1;
+          if (receiptCalls === 1) {
+            return { logs: [{ address: BOND_ADDRESS, topics: topics as Hex[], data }], status: 'success' as const };
+          }
+          return { logs: [], status: 'reverted' as const };
+        },
+      },
+      walletClient: {
+        account: { address: ISSUER },
+        writeContract: async (call) => {
+          calls.push(call);
+          const hash = `0x${'0'.repeat(63)}${nextHash}` as Hex;
+          nextHash += 1;
+          return hash;
+        },
+      },
+    };
+
+    await expect(issueNoteOnChain(deps, note, AGENT)).rejects.toThrow();
+    expect(calls).toHaveLength(2); // deployBond (éxito) e issue() (revertido) se llamaron ambas
+  });
 });
 
 describe('burnNoteOnChain', () => {
@@ -217,5 +288,15 @@ describe('burnNoteOnChain', () => {
     const { deps } = fakeDeps([]);
     await expect(burnNoteOnChain(deps, BOND_ADDRESS, AGENT, 0)).rejects.toThrow();
     await expect(burnNoteOnChain(deps, BOND_ADDRESS, AGENT, 1.5)).rejects.toThrow();
+  });
+
+  // Hallazgo importante 5: antes de este arreglo, `burnNoteOnChain` devolvía el hash de
+  // `controllerRedeemByPartition` sin esperar su recibo — una revocación que revierte en
+  // cadena se publicaría igualmente como `burned_onchain` en el panel, dejando al usuario
+  // creyendo que ya no puede gastar más cuando la nota sigue activa on-chain.
+  it('lanza si el recibo de controllerRedeemByPartition revirtió (status !== success)', async () => {
+    const { deps } = fakeDeps([], 'reverted');
+
+    await expect(burnNoteOnChain(deps, BOND_ADDRESS, AGENT, 2_500_000)).rejects.toThrow();
   });
 });

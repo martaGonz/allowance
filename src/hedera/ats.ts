@@ -411,7 +411,7 @@ export type AtsLog = { address: Hex; topics: readonly Hex[]; data: Hex };
  */
 export type AtsDeps = {
   publicClient: {
-    waitForTransactionReceipt(args: { hash: Hex }): Promise<{ logs: readonly AtsLog[] }>;
+    waitForTransactionReceipt(args: { hash: Hex }): Promise<{ logs: readonly AtsLog[]; status: 'success' | 'reverted' }>;
   };
   walletClient: {
     account: { address: Hex };
@@ -464,7 +464,16 @@ export async function issueNoteOnChain(
     args: [bondData, regulationData],
   });
 
+  // Hallazgo importante 5 de la revisión de rama completa: una transacción revertida en Hedera
+  // puede tardar en confirmarse igual que una exitosa — hay que esperar el recibo Y comprobar
+  // su `status` explícitamente, nunca asumir éxito por el mero hecho de tener un hash. Una
+  // reversión de verdad tampoco emite el evento BondDeployed, así que `extractBondAddress` ya
+  // lanzaría más abajo, pero comprobar `status` primero da un error más claro y no depende de
+  // ese efecto secundario.
   const receipt = await deps.publicClient.waitForTransactionReceipt({ hash: deployTx });
+  if (receipt.status !== 'success') {
+    throw new Error(`la transacción deployBond() revirtió en Hedera (status: ${receipt.status}, tx: ${deployTx})`);
+  }
   const bondAddress = extractBondAddress(receipt.logs);
 
   const issueTx = await deps.walletClient.writeContract({
@@ -473,6 +482,14 @@ export async function issueNoteOnChain(
     functionName: 'issue',
     args: [agent, BigInt(note.amountMicroUsdc), '0x'],
   });
+
+  // Antes de este arreglo, `issueTx` se devolvía sin esperar su recibo: `main.ts` publicaría
+  // `issued_onchain` (y el agente empezaría a gastar creyendo que el bono está en su cuenta)
+  // aunque `issue()` hubiera revertido de verdad en cadena.
+  const issueReceipt = await deps.publicClient.waitForTransactionReceipt({ hash: issueTx });
+  if (issueReceipt.status !== 'success') {
+    throw new Error(`la transacción issue() revirtió en Hedera (status: ${issueReceipt.status}, tx: ${issueTx})`);
+  }
 
   return { bondAddress, deployTx, issueTx };
 }
@@ -493,12 +510,24 @@ export async function burnNoteOnChain(
   if (!Number.isInteger(amountMicroUsdc) || amountMicroUsdc <= 0) {
     throw new RangeError(`importe inválido: ${amountMicroUsdc}`);
   }
-  return deps.walletClient.writeContract({
+  const txHash = await deps.walletClient.writeContract({
     address: bondAddress,
     abi: ASSET_ABI,
     functionName: 'controllerRedeemByPartition',
     args: [DEFAULT_PARTITION, agent, BigInt(amountMicroUsdc), '0x', '0x'],
   });
+
+  // Hallazgo importante 5: sin esto, una revocación que revierte en cadena se publicaba
+  // igualmente como `burned_onchain` (revokeNote en src/panel/server.ts resuelve la promesa
+  // con el hash devuelto aquí) — el usuario creería que ya no puede gastar más cuando la nota
+  // sigue activa on-chain.
+  const receipt = await deps.publicClient.waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status !== 'success') {
+    throw new Error(
+      `la transacción controllerRedeemByPartition revirtió en Hedera (status: ${receipt.status}, tx: ${txHash})`,
+    );
+  }
+  return txHash;
 }
 
 function normalizePrivateKey(raw: string): Hex {
