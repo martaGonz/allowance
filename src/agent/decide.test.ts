@@ -26,4 +26,8 @@ describe('regla de decisión', () => {
   it('un precio exactamente igual a lo que queda sí se paga', () => {
     expect(decide({ ...base, remainingMicroUsdc: 100 })).toEqual({ pay: true });
   });
+
+  it('un dato con la edad exacta del umbral ya cuenta como viejo y se paga', () => {
+    expect(decide({ ...base, knownAgeMs: base.maxStaleMs })).toEqual({ pay: true });
+  });
 });
