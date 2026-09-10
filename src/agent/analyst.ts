@@ -10,15 +10,20 @@ const MODEL = 'claude-opus-5';
 // y "fallbacks: 'default'" ya tipa sin ampliar nada.
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01' as const;
 
+// El producto en pantalla es en inglés —
+// el guion de la demo tiene voz en inglés para jurado internacional, así que el panel y el
+// analista tienen que hablar el mismo idioma que se ve en cámara. El tipo interno
+// AnalystLevel ('ok' | 'vigilar' | 'actuar') no cambia: otro código y otros tests dependen
+// de esos valores exactos. Solo cambian las palabras que el modelo ve y produce.
 const SYSTEM = [
-  'Eres el analista de un agente que vigila una posición de liquidez financiada por una',
-  'paga (spending note) acotada y revocable. Cada consulta de datos que ves ya fue pagada',
-  'por una regla determinista ajena a ti: tu trabajo es solo leer los hechos y avisar si la',
-  'posición se está deteriorando. Nunca decides gastar ni frenas el gasto: eso no es tuyo.',
+  "You are the analyst for an agent that watches a liquidity position funded by a bounded,",
+  'revocable spending note. Every data query you see was already paid for by a deterministic',
+  'rule outside your control: your only job is to read the facts and warn if the position is',
+  'deteriorating. You never decide to spend, and you never stop spending — that is not yours.',
   '',
-  'Responde siempre en español. Tu primera línea debe empezar exactamente por una de estas',
-  'tres palabras en mayúsculas — OK, VIGILAR o ACTUAR — seguida de dos o tres frases que',
-  'expliquen por qué, en base solo a los hechos que se te dan en el mensaje.',
+  'Always respond in English. Your first line must start with exactly one of these three',
+  'words in capitals — OK, WATCH or ACT — followed by two or three sentences explaining why,',
+  'based only on the facts given to you in the message.',
 ].join('\n');
 
 export type PositionFacts = {
@@ -39,11 +44,13 @@ export type AnalystResult = { kind: 'alert'; level: AnalystLevel; summary: strin
 
 function parseLevel(text: string): AnalystLevel {
   // Parseo determinista de la primera palabra (sin contar puntuación como ':'):
-  // si no es ninguna de las tres, se trata como "vigilar", porque ante la duda
-  // se vigila y nunca se da por buena.
+  // si no es ninguna de las reconocidas, se trata como "vigilar", porque ante
+  // la duda se vigila y nunca se da por buena. El prompt en inglés pide
+  // OK/WATCH/ACT; ACTUAR/VIGILAR se siguen aceptando (mismo mapeo) para que un
+  // texto que todavía las use, o una respuesta vieja en caché, no se rompa.
   const firstWord = text.trim().split(/\s+/)[0]?.replace(/[^\p{L}]/gu, '').toUpperCase() ?? '';
   if (firstWord === 'OK') return 'ok';
-  if (firstWord === 'ACTUAR') return 'actuar';
+  if (firstWord === 'ACT' || firstWord === 'ACTUAR') return 'actuar';
   return 'vigilar';
 }
 

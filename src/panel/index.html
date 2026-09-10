@@ -1,4 +1,4 @@
-<title>Allowance — panel</title>
+<title>Allowance — Panel</title>
 <style>
   :root {
     color-scheme: dark;
@@ -200,40 +200,40 @@
 
 <header>
   <h1>Allowance</h1>
-  <div class="tagline">Un agente que gasta de una paga acotada y se para solo</div>
+  <div class="tagline">An agent that spends from a bounded allowance and stops itself</div>
 </header>
 
 <main>
   <section class="budget">
-    <h2>Presupuesto restante</h2>
+    <h2>Remaining budget</h2>
     <div class="remaining-row">
       <div>
         <div id="remaining">$0.000000</div>
-        <div class="of-total">de <span id="amount">$0.000000</span> emitidos</div>
+        <div class="of-total">of <span id="amount">$0.000000</span> issued</div>
       </div>
       <div class="badges">
-        <span id="badge-burned" class="badge burned hidden">QUEMADA</span>
+        <span id="badge-burned" class="badge burned hidden">BURNED</span>
         <span id="badge-stopped" class="badge stopped hidden"></span>
       </div>
     </div>
     <div class="bar-track"><div id="bar-fill" class="bar-fill"></div></div>
-    <button id="revoke-btn">Revocar la paga</button>
+    <button id="revoke-btn">Revoke allowance</button>
   </section>
 
   <section class="analyst">
-    <h2>Analista</h2>
-    <div id="analyst-level" class="level-pill pendiente">SIN DATOS</div>
-    <p id="analyst-summary">Esperando el primer dato pagado…</p>
+    <h2>Analyst</h2>
+    <div id="analyst-level" class="level-pill pendiente">NO DATA</div>
+    <p id="analyst-summary">Waiting for the first paid data point…</p>
     <p id="analyst-note" class="analyst-note hidden"></p>
   </section>
 
   <section class="prices">
-    <h2>Precio por consulta</h2>
+    <h2>Price per query</h2>
     <table><tbody id="price-table-body"></tbody></table>
   </section>
 
   <section class="log">
-    <h2>Decisiones y pagos</h2>
+    <h2>Decisions and payments</h2>
     <ol id="log-list"></ol>
   </section>
 </main>
@@ -242,7 +242,12 @@
   (function () {
     'use strict';
 
-    var TOOL_NAMES = { token_price: 'Precio del token', position_state: 'Estado de la posición' };
+    var TOOL_NAMES = { token_price: 'Token price', position_state: 'Position state' };
+    var LEVEL_LABEL = { ok: 'OK', vigilar: 'WATCH', actuar: 'ACT' };
+
+    function levelLabel(level) {
+      return LEVEL_LABEL[level] || level.toUpperCase();
+    }
     var LOG_LIMIT = 150;
     // Los eventos on-chain enlazan a HashScan testnet, como
     // transacción o como contrato según cuál de los dos identifique el evento.
@@ -284,7 +289,7 @@
 
       els.badgeBurned.classList.toggle('hidden', !state.burned);
       els.revokeBtn.disabled = state.burned;
-      els.revokeBtn.textContent = state.burned ? 'Paga revocada' : 'Revocar la paga';
+      els.revokeBtn.textContent = state.burned ? 'Allowance revoked' : 'Revoke allowance';
     }
 
     function renderPrices() {
@@ -295,7 +300,7 @@
             '<tr><td>' + toolLabel(tool) + '</td><td class="price">' + usd(state.prices[tool]) + '</td></tr>'
           );
         });
-      els.priceTableBody.innerHTML = rows.join('') || '<tr><td colspan="2">Aún no se ha considerado ninguna consulta.</td></tr>';
+      els.priceTableBody.innerHTML = rows.join('') || '<tr><td colspan="2">No query considered yet.</td></tr>';
     }
 
     function addLogLine(cls, text) {
@@ -333,7 +338,7 @@
 
     function setAnalyst(level, summary) {
       els.analystLevel.className = 'level-pill ' + level;
-      els.analystLevel.textContent = level.toUpperCase();
+      els.analystLevel.textContent = levelLabel(level);
       els.analystSummary.textContent = summary;
       els.analystNote.classList.add('hidden');
     }
@@ -344,10 +349,10 @@
     }
 
     var STOPPED_LABEL = {
-      exhausted: 'se agotó la paga',
-      expired: 'la paga venció',
-      burned: 'la paga fue revocada',
-      max_rounds: 'se alcanzó el límite de rondas',
+      exhausted: 'allowance exhausted',
+      expired: 'allowance expired',
+      burned: 'allowance revoked',
+      max_rounds: 'round limit reached',
     };
 
     function handleEvent(event, isReplay) {
@@ -356,67 +361,67 @@
           state.prices[event.tool] = event.priceMicroUsdc;
           renderPrices();
           if (event.decision.pay) {
-            addLogLine('considered', toolLabel(event.tool) + ' — ' + usd(event.priceMicroUsdc) + ' — se paga');
+            addLogLine('considered', toolLabel(event.tool) + ' — ' + usd(event.priceMicroUsdc) + ' — paying');
           } else {
-            var reason = event.decision.reason === 'too_expensive' ? 'demasiado caro ahora mismo' : 'el dato sigue fresco';
-            addLogLine('refused', toolLabel(event.tool) + ' — ' + usd(event.priceMicroUsdc) + ' — RECHAZADA (' + reason + ')');
+            var reason = event.decision.reason === 'too_expensive' ? 'too expensive right now' : 'data is still fresh';
+            addLogLine('refused', toolLabel(event.tool) + ' — ' + usd(event.priceMicroUsdc) + ' — REFUSED (' + reason + ')');
           }
           break;
         }
         case 'paid': {
           state.remainingMicroUsdc = event.remainingMicroUsdc;
           renderBudget();
-          addLogLine('paid', toolLabel(event.tool) + ' pagado — tx ' + (event.txId || 'sin tx') + ' — quedan ' + usd(event.remainingMicroUsdc));
+          addLogLine('paid', toolLabel(event.tool) + ' paid — tx ' + (event.txId || 'no tx') + ' — remaining ' + usd(event.remainingMicroUsdc));
           break;
         }
         case 'failed': {
-          addLogLine('error', toolLabel(event.tool) + ' falló: ' + event.error);
+          addLogLine('error', toolLabel(event.tool) + ' failed: ' + event.error);
           break;
         }
         case 'settle_failed': {
-          addLogLine('error', 'liquidación de ' + toolLabel(event.tool) + ' falló: ' + event.error);
+          addLogLine('error', 'settlement of ' + toolLabel(event.tool) + ' failed: ' + event.error);
           break;
         }
         case 'analyzed': {
           setAnalyst(event.level, event.summary);
-          addLogLine('considered', 'analista: ' + event.level.toUpperCase() + ' — ' + event.summary);
+          addLogLine('considered', 'analyst: ' + levelLabel(event.level) + ' — ' + event.summary);
           break;
         }
         case 'analysis_refused': {
-          setAnalystNote('el analista rechazó responder a esta ronda.');
+          setAnalystNote('the analyst declined to respond this round.');
           break;
         }
         case 'analysis_failed': {
-          setAnalystNote('el analista falló: ' + event.error);
+          setAnalystNote('the analyst failed: ' + event.error);
           break;
         }
         case 'issued_onchain': {
-          addOnChainLogLine('Bono emitido en ATS', [
-            { label: 'contrato', href: HASHSCAN_TESTNET + '/contract/' + event.bondAddress },
-            { label: 'tx de despliegue', href: HASHSCAN_TESTNET + '/transaction/' + event.deployTx },
-            { label: 'tx de emisión', href: HASHSCAN_TESTNET + '/transaction/' + event.issueTx },
+          addOnChainLogLine('ATS bond issued', [
+            { label: 'contract', href: HASHSCAN_TESTNET + '/contract/' + event.bondAddress },
+            { label: 'deploy tx', href: HASHSCAN_TESTNET + '/transaction/' + event.deployTx },
+            { label: 'issue tx', href: HASHSCAN_TESTNET + '/transaction/' + event.issueTx },
           ]);
           break;
         }
         case 'issue_onchain_failed': {
-          addLogLine('error', 'la emisión en cadena falló: ' + event.error);
+          addLogLine('error', 'on-chain issue failed: ' + event.error);
           break;
         }
         case 'burned_onchain': {
-          addOnChainLogLine('Quema confirmada en cadena', [
+          addOnChainLogLine('Burn confirmed on-chain', [
             { label: 'tx', href: HASHSCAN_TESTNET + '/transaction/' + event.txHash },
           ]);
           break;
         }
         case 'burn_onchain_failed': {
-          addLogLine('error', 'la quema en cadena falló: ' + event.error);
+          addLogLine('error', 'on-chain burn failed: ' + event.error);
           break;
         }
         case 'stopped': {
           var label = STOPPED_LABEL[event.reason] || event.reason;
-          els.badgeStopped.textContent = 'PARADO: ' + label;
+          els.badgeStopped.textContent = 'STOPPED: ' + label;
           els.badgeStopped.classList.remove('hidden');
-          addLogLine('stopped', 'PARADO — ' + label);
+          addLogLine('stopped', 'STOPPED — ' + label);
           if (!isReplay) refreshState();
           break;
         }

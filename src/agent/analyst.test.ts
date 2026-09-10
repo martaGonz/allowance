@@ -42,9 +42,9 @@ function textMessage(text: string, stopReason: Anthropic.Beta.BetaStopReason = '
 }
 
 describe('el analista de Claude', () => {
-  it('un texto que empieza por ACTUAR produce el nivel actuar', async () => {
+  it('a text starting with ACT produces level actuar', async () => {
     const deps: AnalystDeps = {
-      create: async () => textMessage('ACTUAR: la posición se ha cerrado, revisa ya el estado real.'),
+      create: async () => textMessage('ACT: the position has closed, check the real state now.'),
     };
 
     const result = await analyzePosition(deps, FACTS);
@@ -52,12 +52,30 @@ describe('el analista de Claude', () => {
     expect(result).toMatchObject({ kind: 'alert', level: 'actuar' });
   });
 
-  it('un texto que empieza por OK produce el nivel ok', async () => {
-    const deps: AnalystDeps = { create: async () => textMessage('OK todo dentro de rango por ahora.') };
+  it('a text starting with WATCH produces level vigilar', async () => {
+    const deps: AnalystDeps = {
+      create: async () => textMessage('WATCH: nothing urgent yet, keep an eye on the next hour.'),
+    };
+
+    const result = await analyzePosition(deps, FACTS);
+
+    expect(result).toMatchObject({ kind: 'alert', level: 'vigilar' });
+  });
+
+  it('a text starting with OK produces level ok', async () => {
+    const deps: AnalystDeps = { create: async () => textMessage('OK everything within range for now.') };
 
     const result = await analyzePosition(deps, FACTS);
 
     expect(result).toMatchObject({ kind: 'alert', level: 'ok' });
+  });
+
+  it('the old Spanish ACTUAR/VIGILAR words still map to the same levels', async () => {
+    const actuarDeps: AnalystDeps = { create: async () => textMessage('ACTUAR: revisa ya el estado real.') };
+    const vigilarDeps: AnalystDeps = { create: async () => textMessage('VIGILAR de cerca la próxima hora.') };
+
+    expect(await analyzePosition(actuarDeps, FACTS)).toMatchObject({ kind: 'alert', level: 'actuar' });
+    expect(await analyzePosition(vigilarDeps, FACTS)).toMatchObject({ kind: 'alert', level: 'vigilar' });
   });
 
   it('un stop_reason de refusal se traduce en refused sin leer content', async () => {
@@ -108,5 +126,26 @@ describe('el analista de Claude', () => {
     expect(typeof userContent).toBe('string');
     const parsedFacts = JSON.parse(userContent as string);
     expect(parsedFacts).toEqual(FACTS);
+  });
+
+  it('the system prompt is in English and names OK, WATCH and ACT', async () => {
+    let sent: Anthropic.Beta.MessageCreateParamsNonStreaming | undefined;
+    const deps: AnalystDeps = {
+      create: async (params) => {
+        sent = params;
+        return textMessage('OK everything within range for now.');
+      },
+    };
+
+    await analyzePosition(deps, FACTS);
+
+    const system = sent?.system;
+    expect(typeof system).toBe('string');
+    const text = system as string;
+    expect(text).toContain('OK');
+    expect(text).toContain('WATCH');
+    expect(text).toContain('ACT');
+    // No lingering Spanish instruction words from the old prompt.
+    expect(text).not.toMatch(/VIGILAR|ACTUAR|español/i);
   });
 });
