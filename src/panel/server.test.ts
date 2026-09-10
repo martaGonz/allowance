@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { createPanelApp, createEventBus, revokeNote, type PanelDeps } from './server.js';
+import type { Hex } from 'viem';
+import { createPanelApp, createEventBus, revokeNote, type PanelDeps, type OnChainBurn } from './server.js';
 import { createNoteStore } from '../agent/note-store.js';
 import { createNote } from '../accounting/note.js';
 import type { AgentEvent } from '../agent/run.js';
 
 const HOUR = 3_600_000;
+const BOND_ADDRESS: Hex = '0x000000000000000000000000000000000000abcd';
+const AGENT: Hex = '0x0000000000000000000000000000000000000022';
 
 function makeDeps(overrides: Partial<PanelDeps> = {}): PanelDeps {
   return {
@@ -16,13 +19,70 @@ function makeDeps(overrides: Partial<PanelDeps> = {}): PanelDeps {
 }
 
 describe('revokeNote', () => {
-  it('quema la nota en el almacén compartido, sin red', () => {
+  it('quema la nota en el almacén compartido, sin red, sin nota on-chain inyectada', () => {
     const notes = createNoteStore(createNote({ amountMicroUsdc: 1_000, expiresAt: Date.now() + HOUR }));
+    const bus = createEventBus();
     expect(notes.get().burned).toBe(false);
 
-    revokeNote(notes);
+    revokeNote(notes, bus);
 
     expect(notes.get().burned).toBe(true);
+    expect(bus.history()).toEqual([]); // sin `onChain`, no hay nada que quemar en cadena
+  });
+
+  it('quema en memoria al instante y llama al quemador on-chain inyectado con el SALDO RESTANTE, sin bloquear', async () => {
+    // La quema en memoria es síncrona; la quema on-chain
+    // se dispara sin esperar su resultado ("without blocking the HTTP response").
+    const note = { ...createNote({ amountMicroUsdc: 5_000, expiresAt: Date.now() + HOUR }), spentMicroUsdc: 1_000 };
+    const notes = createNoteStore(note);
+    const bus = createEventBus();
+    const calls: { bondAddress: Hex; agent: Hex; amountMicroUsdc: number }[] = [];
+    let resolveBurn: (txHash: Hex) => void = () => {};
+    const burnPromise = new Promise<Hex>((resolve) => {
+      resolveBurn = resolve;
+    });
+    const onChain: OnChainBurn = {
+      bondAddress: BOND_ADDRESS,
+      agent: AGENT,
+      burn: async (bondAddress, agent, amountMicroUsdc) => {
+        calls.push({ bondAddress, agent, amountMicroUsdc });
+        return burnPromise;
+      },
+    };
+
+    revokeNote(notes, bus, onChain);
+
+    // La quema en memoria ya sucedió, aunque la promesa del quemador on-chain siga pendiente.
+    expect(notes.get().burned).toBe(true);
+    expect(calls).toEqual([{ bondAddress: BOND_ADDRESS, agent: AGENT, amountMicroUsdc: 4_000 }]);
+    expect(bus.history()).toEqual([]); // todavía no hay resultado on-chain
+
+    resolveBurn('0x00000000000000000000000000000000000000000000000000000000000001');
+    await burnPromise;
+    await new Promise((resolve) => setTimeout(resolve, 0)); // deja correr el .then() encadenado en revokeNote
+
+    expect(bus.history()).toEqual([
+      { kind: 'burned_onchain', txHash: '0x00000000000000000000000000000000000000000000000000000000000001' },
+    ]);
+  });
+
+  it('publica burn_onchain_failed si el quemador inyectado falla, sin afectar la quema en memoria', async () => {
+    const notes = createNoteStore(createNote({ amountMicroUsdc: 2_000, expiresAt: Date.now() + HOUR }));
+    const bus = createEventBus();
+    const onChain: OnChainBurn = {
+      bondAddress: BOND_ADDRESS,
+      agent: AGENT,
+      burn: async () => {
+        throw new Error('el relay rechazó la transacción');
+      },
+    };
+
+    revokeNote(notes, bus, onChain);
+
+    expect(notes.get().burned).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0)); // deja correr el .catch() encadenado
+
+    expect(bus.history()).toEqual([{ kind: 'burn_onchain_failed', error: 'Error: el relay rechazó la transacción' }]);
   });
 });
 
@@ -87,6 +147,30 @@ describe('POST /burn', () => {
     expect(body.ok).toBe(true);
     expect(body.note.burned).toBe(true);
     expect(notes.get().burned).toBe(true);
+  });
+
+  it('con una nota tokenizada, quema en memoria de inmediato y llama al quemador on-chain inyectado con el saldo restante', async () => {
+    const note = { ...createNote({ amountMicroUsdc: 5_000, expiresAt: Date.now() + HOUR }), spentMicroUsdc: 2_000 };
+    const notes = createNoteStore(note);
+    const calls: { bondAddress: Hex; agent: Hex; amountMicroUsdc: number }[] = [];
+    const onChain: OnChainBurn = {
+      bondAddress: BOND_ADDRESS,
+      agent: AGENT,
+      burn: async (bondAddress, agent, amountMicroUsdc) => {
+        calls.push({ bondAddress, agent, amountMicroUsdc });
+        return '0x00000000000000000000000000000000000000000000000000000000000002';
+      },
+    };
+    const app = createPanelApp(makeDeps({ notes, onChain }));
+
+    const res = await app.request('/burn', { method: 'POST' });
+    const body = (await res.json()) as { ok: boolean; note: { burned: boolean } };
+
+    // La respuesta HTTP no esperó a que se resolviera la llamada on-chain, pero para cuando
+    // Hono ya sirvió la respuesta, revokeNote ya la ha disparado de forma síncrona.
+    expect(res.status).toBe(200);
+    expect(body.note.burned).toBe(true);
+    expect(calls).toEqual([{ bondAddress: BOND_ADDRESS, agent: AGENT, amountMicroUsdc: 3_000 }]);
   });
 });
 

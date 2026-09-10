@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { serve } from '@hono/node-server';
-import { burn } from '../accounting/note.js';
+import type { Hex } from 'viem';
+import { burn, remaining } from '../accounting/note.js';
 import type { NoteStore } from '../agent/note-store.js';
 import type { AgentEvent } from '../agent/run.js';
 
@@ -40,19 +41,44 @@ export function createEventBus(): EventBus {
 }
 
 /**
- * Revoca la nota de la paga: hoy solo la quema en memoria.
- * La sustituirá el cuerpo de esta función por una quema real en
- * cadena (`burnNoteOnChain`) sin tocar el resto del panel ni el bucle del
- * agente — es la única función que ese cambio necesita tocar.
+ * La nota tokenizada en ATS que `revokeNote` necesita para revocarla también en cadena
+ * `burn` está inyectada — nunca `burnNoteOnChain` ni
+ * `liveAtsDeps` directamente — para que `server.test.ts` siga sin red.
  */
-export function revokeNote(notes: NoteStore): void {
-  notes.set(burn(notes.get()));
+export type OnChainBurn = {
+  bondAddress: Hex;
+  agent: Hex;
+  burn: (bondAddress: Hex, agent: Hex, amountMicroUsdc: number) => Promise<Hex>;
+};
+
+/**
+ * Revoca la nota de la paga. La quema en memoria sigue siendo síncrona y
+ * ocurre primero — el agente deja de poder gastar en el mismo tick en que se llama, tanto si
+ * hay nota tokenizada como si no. Si `onChain` está presente, se dispara además `onChain.burn(...)` con el SALDO RESTANTE de antes de
+ * quemar SIN esperar su
+ * resultado — su éxito o fallo se publica
+ * en el bus (`burned_onchain` / `burn_onchain_failed`) cuando llegue, de forma asíncrona.
+ */
+export function revokeNote(notes: NoteStore, bus: EventBus, onChain?: OnChainBurn): void {
+  const before = notes.get();
+  notes.set(burn(before));
+
+  if (!onChain) return;
+  const amountMicroUsdc = remaining(before);
+  onChain
+    .burn(onChain.bondAddress, onChain.agent, amountMicroUsdc)
+    .then((txHash) => bus.publish({ kind: 'burned_onchain', txHash }))
+    .catch((error: unknown) => bus.publish({ kind: 'burn_onchain_failed', error: String(error) }));
 }
 
 export type PanelDeps = {
   notes: NoteStore;
   bus: EventBus;
   indexHtml: string;
+  /** Ausente si la nota nunca se emitió on-chain (variables
+   * de entorno ausentes o `issueNoteOnChain` falló) — entonces `POST /burn` solo quema en
+   * memoria, como antes. */
+  onChain?: OnChainBurn;
 };
 
 /**
@@ -85,7 +111,7 @@ export function createPanelApp(deps: PanelDeps): Hono {
   );
 
   app.post('/burn', (c) => {
-    revokeNote(deps.notes);
+    revokeNote(deps.notes, deps.bus, deps.onChain);
     return c.json({ ok: true, note: deps.notes.get() });
   });
 
@@ -101,10 +127,12 @@ function readIndexHtml(): string {
  * Arranca el panel de verdad: lee `index.html` del disco (nunca al cargar el
  * módulo, solo cuando de verdad se arranca) y sirve `createPanelApp` sobre
  * `@hono/node-server`. `main.ts` es quien la llama, con el `NoteStore` y el
- * `EventBus` que también alimentan al bucle del agente.
+ * `EventBus` que también alimentan al bucle del agente, y el `OnChainBurn` ya resuelto si la nota se emitió de verdad en ATS.
  */
-export function startPanel(notes: NoteStore, bus: EventBus): void {
-  const app = createPanelApp({ notes, bus, indexHtml: readIndexHtml() });
+export function startPanel(notes: NoteStore, bus: EventBus, onChain?: OnChainBurn): void {
+  // `exactOptionalPropertyTypes` distingue "propiedad ausente" de "propiedad presente con
+  // valor undefined": se extiende condicionalmente en vez de pasar `onChain` siempre.
+  const app = createPanelApp({ notes, bus, indexHtml: readIndexHtml(), ...(onChain ? { onChain } : {}) });
   serve({ fetch: app.fetch, port: PANEL_PORT });
   console.log(`panel escuchando en :${PANEL_PORT}`);
 }

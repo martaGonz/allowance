@@ -1,9 +1,11 @@
-import { createNote } from '../accounting/note.js';
+import type { Hex } from 'viem';
+import { createNote, type Note } from '../accounting/note.js';
 import { createNoteStore } from './note-store.js';
 import { runAgent, type AgentDeps } from './run.js';
 import { livePay, liveSettle, liveAnalyst } from './live.js';
 import { TOOLS } from '../graph/tools.js';
-import { createEventBus, startPanel } from '../panel/server.js';
+import { createEventBus, startPanel, type EventBus, type OnChainBurn } from '../panel/server.js';
+import { issueNoteOnChain, burnNoteOnChain, liveAtsDeps } from '../hedera/ats.js';
 
 // WETH en Base — vigilada por defecto cuando WATCH_TOKEN_CONTRACT no se configura.
 const DEFAULT_WATCH_TOKEN_CONTRACT = '0x4200000000000000000000000000000000000006';
@@ -32,6 +34,46 @@ function readWatch(): AgentDeps['watch'] {
 }
 
 /**
+ * Si `ATS_ISSUER_PRIVATE_KEY` y `HEDERA_EVM_ADDRESS` están
+ * configuradas, tokeniza la nota en Asset Tokenization Studio ANTES de arrancar el bucle y
+ * devuelve el `OnChainBurn` que el botón "Revocar" del panel necesita para quemar de verdad
+ * Si `issueNoteOnChain` lanza, se publica `issue_onchain_failed` y el agente
+ * arranca igual, con la nota solo en memoria — la nunca puede impedir que el agente
+ * funcione. Si las variables faltan, se salta en silencio (un único log informativo): no es
+ * un error, es el modo por defecto sin cuentas testnet fondeadas.
+ */
+async function issueOnChainIfConfigured(note: Note, bus: EventBus): Promise<OnChainBurn | undefined> {
+  const issuerKeyConfigured = Boolean(process.env.ATS_ISSUER_PRIVATE_KEY);
+  const agentAddress = process.env.HEDERA_EVM_ADDRESS;
+  if (!issuerKeyConfigured || !agentAddress) {
+    console.log('ATS_ISSUER_PRIVATE_KEY / HEDERA_EVM_ADDRESS no configuradas: la nota se queda solo en memoria');
+    return undefined;
+  }
+
+  const agent = agentAddress as Hex;
+  try {
+    const deps = liveAtsDeps();
+    const result = await issueNoteOnChain(deps, note, agent);
+    bus.publish({
+      kind: 'issued_onchain',
+      bondAddress: result.bondAddress,
+      deployTx: result.deployTx,
+      issueTx: result.issueTx,
+    });
+    return {
+      bondAddress: result.bondAddress,
+      agent,
+      // Reutiliza los mismos clientes viem de la emisión — no vuelve a leer
+      // ATS_ISSUER_PRIVATE_KEY ni reconstruye la conexión en cada quema.
+      burn: (bondAddress, burnAgent, amountMicroUsdc) => burnNoteOnChain(deps, bondAddress, burnAgent, amountMicroUsdc),
+    };
+  } catch (error) {
+    bus.publish({ kind: 'issue_onchain_failed', error: String(error) });
+    return undefined;
+  }
+}
+
+/**
  * Punto de entrada real: todo lo credenciado —
  * `livePay`, `liveSettle`, `liveAnalyst`, la nota emitida con las variables
  * de entorno — se construye aquí dentro, nunca al cargar el módulo. Nunca se
@@ -48,7 +90,9 @@ async function main(): Promise<void> {
   const watch = readWatch();
   const bus = createEventBus();
 
-  startPanel(notes, bus);
+  const onChain = await issueOnChainIfConfigured(note, bus);
+
+  startPanel(notes, bus, onChain);
 
   const deps: AgentDeps = {
     notes,

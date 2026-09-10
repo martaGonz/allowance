@@ -1,3 +1,4 @@
+import type { Hex } from 'viem';
 import { debit, remaining } from '../accounting/note.js';
 import { decide, type Decision } from './decide.js';
 import type { ToolSpec } from '../graph/tools.js';
@@ -18,7 +19,16 @@ export type AgentEvent =
   | { kind: 'analyzed'; level: AnalystLevel; summary: string }
   | { kind: 'analysis_refused' }
   | { kind: 'analysis_failed'; error: string }
-  | { kind: 'stopped'; reason: 'exhausted' | 'expired' | 'burned' | 'max_rounds' };
+  | { kind: 'stopped'; reason: 'exhausted' | 'expired' | 'burned' | 'max_rounds' }
+  // La nota tokenizada en ATS. `issued_onchain` /
+  // `issue_onchain_failed` los emite main.ts antes de arrancar el bucle; `burned_onchain` /
+  // `burn_onchain_failed` los emite el panel tras `POST /burn`, sin bloquear la respuesta.
+  // Ninguno de los dos cambia cómo gasta el bucle (`runAgent` no los emite ni los lee) — son
+  // eventos puramente informativos para el panel.
+  | { kind: 'issued_onchain'; bondAddress: Hex; deployTx: Hex; issueTx: Hex }
+  | { kind: 'issue_onchain_failed'; error: string }
+  | { kind: 'burned_onchain'; txHash: Hex }
+  | { kind: 'burn_onchain_failed'; error: string };
 
 export type AgentDeps = {
   /** La nota vive en un almacén compartido con el panel, no en una copia local. */

@@ -191,6 +191,9 @@
   #log-list li.error { border-left-color: var(--red); }
   #log-list li.considered { border-left-color: var(--blue); color: var(--muted); }
   #log-list li.stopped { border-left-color: var(--amber); color: var(--amber); font-weight: 600; }
+  #log-list li.onchain { border-left-color: var(--blue); }
+  #log-list li a { color: var(--blue); text-decoration: none; }
+  #log-list li a:hover { text-decoration: underline; }
 
   .hidden { display: none !important; }
 </style>
@@ -241,6 +244,9 @@
 
     var TOOL_NAMES = { token_price: 'Precio del token', position_state: 'Estado de la posición' };
     var LOG_LIMIT = 150;
+    // Los eventos on-chain enlazan a HashScan testnet, como
+    // transacción o como contrato según cuál de los dos identifique el evento.
+    var HASHSCAN_TESTNET = 'https://hashscan.io/testnet';
 
     var els = {
       remaining: document.getElementById('remaining'),
@@ -296,6 +302,29 @@
       var li = document.createElement('li');
       li.className = cls;
       li.textContent = text;
+      els.logList.insertBefore(li, els.logList.firstChild);
+      while (els.logList.children.length > LOG_LIMIT) {
+        els.logList.removeChild(els.logList.lastChild);
+      }
+    }
+
+    // Igual que addLogLine, pero el texto termina en uno o
+    // más enlaces a HashScan. Construido enteramente con createElement/textContent — nunca
+    // innerHTML — porque el texto de los enlaces son datos (direcciones y hashes) que llegan
+    // por el bus de eventos.
+    function addOnChainLogLine(prefix, links) {
+      var li = document.createElement('li');
+      li.className = 'onchain';
+      li.appendChild(document.createTextNode(prefix + ' — '));
+      links.forEach(function (link, index) {
+        if (index > 0) li.appendChild(document.createTextNode(' · '));
+        var a = document.createElement('a');
+        a.href = link.href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = link.label;
+        li.appendChild(a);
+      });
       els.logList.insertBefore(li, els.logList.firstChild);
       while (els.logList.children.length > LOG_LIMIT) {
         els.logList.removeChild(els.logList.lastChild);
@@ -359,6 +388,28 @@
         }
         case 'analysis_failed': {
           setAnalystNote('el analista falló: ' + event.error);
+          break;
+        }
+        case 'issued_onchain': {
+          addOnChainLogLine('Bono emitido en ATS', [
+            { label: 'contrato', href: HASHSCAN_TESTNET + '/contract/' + event.bondAddress },
+            { label: 'tx de despliegue', href: HASHSCAN_TESTNET + '/transaction/' + event.deployTx },
+            { label: 'tx de emisión', href: HASHSCAN_TESTNET + '/transaction/' + event.issueTx },
+          ]);
+          break;
+        }
+        case 'issue_onchain_failed': {
+          addLogLine('error', 'la emisión en cadena falló: ' + event.error);
+          break;
+        }
+        case 'burned_onchain': {
+          addOnChainLogLine('Quema confirmada en cadena', [
+            { label: 'tx', href: HASHSCAN_TESTNET + '/transaction/' + event.txHash },
+          ]);
+          break;
+        }
+        case 'burn_onchain_failed': {
+          addLogLine('error', 'la quema en cadena falló: ' + event.error);
           break;
         }
         case 'stopped': {
