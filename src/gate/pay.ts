@@ -43,7 +43,25 @@ export async function payAndRetry(url: string, priceMicroUsdc: number): Promise<
     );
   }
 
-  const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
+  // x402Client.createPaymentPayload firma por defecto accepts[0] (selector por defecto de
+  // @x402/core, dist/esm/client/index.mjs:39,441), no la entrada ya validada arriba. Si la
+  // puerta anunciara varias opciones, comprobar `quoted` y firmar `paymentRequired` tal cual
+  // dejaría que se firmase una entrada distinta de la comprobada. Se restringe `accepts` a
+  // exactamente `quoted` para que sea imposible seleccionar y firmar otra cosa.
+  const paymentPayload = await httpClient.createPaymentPayload({ ...paymentRequired, accepts: [quoted] });
+
+  // Defensa en profundidad: el payload producido tiene que llevar exactamente lo comprobado.
+  const accepted = paymentPayload.accepted;
+  if (
+    accepted.amount !== String(priceMicroUsdc) ||
+    accepted.asset !== HEDERA_TESTNET_USDC ||
+    accepted.network !== HEDERA_TESTNET_NETWORK
+  ) {
+    throw new Error(
+      `el pago construido (${accepted.amount} ${accepted.asset} en ${accepted.network}) no coincide con lo autorizado (${priceMicroUsdc} ${HEDERA_TESTNET_USDC} en ${HEDERA_TESTNET_NETWORK}): no se envía`,
+    );
+  }
+
   const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
   const paid = await fetch(url, { headers: paymentHeaders });
