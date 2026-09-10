@@ -36,8 +36,7 @@ flowchart LR
     Panel -->|"controllerRedeemByPartition"| ATS
     AgentLoop -->|"debit / remaining"| Ledger
     AgentLoop -->|"query"| Gate
-    AgentLoop -->|"or via"| MCP
-    MCP -->|"query"| Gate
+    MCP -->|"query (quote only, never pays)"| Gate
     Gate -->|"402, then data after payment"| GraphSub
     GraphSub -->|"position + token price"| Base
     AgentLoop -->|"settle paid query in USDC"| Treasury
@@ -64,11 +63,28 @@ Full write-up, with one paragraph per component and its source directory: [docs/
 6. **Settle on Arc** — the agent settles that same paid query in USDC on Arc testnet, from a
    Circle Developer-Controlled Wallet, with an idempotency key derived from the payment so a
    retry never pays twice (`src/arc/treasury.ts`).
-7. **Stop or revoke** — the agent debits its off-chain ledger for every payment and stops itself
-   the instant the note is exhausted or expired (`src/agent/run.ts`). A human can also revoke it
-   at any moment from the panel: the ledger is burned immediately and, if the note was issued
-   on-chain, `controllerRedeemByPartition` burns the unspent balance on Hedera too
-   (`src/panel/server.ts`, `src/hedera/ats.ts`).
+7. **Stop or revoke** — the agent checks the debit before paying and commits it only once the
+   payment succeeded, for every query (`src/agent/run.ts`), and stops itself the instant the note
+   is exhausted or expired. A human can also revoke it at any moment from the panel: the ledger is
+   burned immediately and, if the note was issued on-chain, `controllerRedeemByPartition` burns
+   the unspent balance on Hedera too (`src/panel/server.ts`, `src/hedera/ats.ts`).
+
+## Two rails, one payment
+
+Steps 4 and 6 above both move USDC, on two different chains, and that can look like the agent
+"pays twice" for one query. It doesn't — they're two legs of the same payment:
+
+- **The data vendor is paid once, on Hedera** — from the agent's own float (its Hedera USDC
+  balance), capped by the allowance. This is the x402 payment (`src/gate/pay.ts`).
+- **The treasury pays once, on Arc** — reimbursing whoever owns that float
+  (`ARC_OPERATOR_ADDRESS`), keyed by the Hedera payment's transaction id so a retry can never
+  reimburse the same payment twice (`src/arc/treasury.ts`, `idempotencyKeyFromRef`).
+
+In this demo every account involved belongs to us, so both HashScan and Arcscan show the same
+amount moving — that can look redundant, but the Arc leg is a **reimbursement of the float**, not
+a second purchase. In production the float owner and the data vendor would typically be different
+parties, and the Arc settlement is what makes fronting the Hedera payment sustainable for whoever
+holds that float.
 
 ## Setup
 
@@ -76,8 +92,15 @@ Full write-up, with one paragraph per component and its source directory: [docs/
 
 - Node.js 20 or newer (built and tested on Node 22).
 - A The Graph API key, to query the Messari Standardized Subgraph.
-- A funded Hedera testnet account (HBAR for fees, associated with USDC token `0.0.429274`), to
-  pay through the x402 gate and, optionally, to issue/revoke the ATS bond.
+- Hedera testnet accounts — note these are not the same account:
+  - **The paying agent account** (`HEDERA_ACCOUNT_ID` / `HEDERA_PRIVATE_KEY`) needs USDC token
+    `0.0.429274` and must be **associated** with it (HBAR for fees is covered by the Blocky402
+    facilitator, which pays the fee as fee payer) — this is the account that pays the x402 gate.
+  - **The ATS issuer account** (`ATS_ISSUER_PRIVATE_KEY`) needs HBAR, to sign and pay gas for
+    deploying the bond, issuing it to the agent, and burning it on revoke — it never touches
+    USDC.
+  - **The gate's pay-to account** (`GATE_PAYTO_ACCOUNT_ID`) must also be associated with USDC
+    `0.0.429274`, or it cannot receive the payment.
 - A Circle Developer-Controlled Wallet on Arc testnet, to settle paid queries in USDC.
 - An Anthropic API key, for the Claude analyst (optional — the agent still spends and stops
   correctly without it; it just stops producing alerts).
@@ -123,15 +146,19 @@ npm run mcp          # priced tools over MCP      — src/mcp/server.ts
 npm run agent        # the agent loop + panel     — src/agent/main.ts
 ```
 
-`npm run agent` starts the panel (default `http://localhost:8787`) and the spending loop
-together; point it at the gate with `GATE_URL`.
+Each of these scripts (`agent`, `gate`, `mcp`) runs `tsx --env-file=.env`, so `.env` is loaded
+automatically before any code runs — no separate `dotenv` step needed.
+
+`npm run agent` starts the panel (default `http://127.0.0.1:8787`, bound to loopback only — not
+reachable from other machines) and the spending loop together; point it at the gate with
+`GATE_URL`.
 
 ## Prize map
 
 | Track | Requirement | Files |
 |---|---|---|
 | The Graph — Best Use of Composable or Standardized Graph Products | Build meaningfully on a standardized schema | `src/graph/client.ts` (Messari Standardized Subgraph, DEX AMM Extended schema, Uniswap v3 on Base — one query shape for position state and token price), `src/graph/tools.ts` |
-| The Graph — Best AI Tooling or AI Use Case | Graph data is load-bearing for agent reasoning and decisions, exposed as AI tooling | `src/graph/tools.ts` (priced tools), `src/agent/decide.ts` (spending decision on Graph data freshness), `src/agent/analyst.ts` + `src/agent/run.ts` (Claude reasons over paid Graph facts), `src/mcp/server.ts` (same tools over MCP) |
+| The Graph — Best AI Tooling or AI Use Case | Graph data is load-bearing for agent reasoning and decisions, exposed as AI tooling | `src/graph/tools.ts` (priced tools), `src/agent/decide.ts` (spending decision on Graph data freshness), `src/agent/analyst.ts` + `src/agent/run.ts` (Claude reasons over paid Graph facts), `src/mcp/server.ts` (the same priced tools exposed over MCP — quote only, it never pays) |
 | Hedera — AI & Agentic Payments | An x402 service, an agent that consumes it, and settlement through a facilitator | `src/gate/server.ts`, `src/gate/routes.ts` (x402 service on `@x402/hono`), `src/gate/pay.ts` + `src/agent/live.ts` (consuming agent), settled through the **Blocky402 facilitator** (`https://api.testnet.blocky402.com`) |
 | Hedera — Tokenization of Anything | A tokenized instrument with a real lifecycle: issue and burn | `src/hedera/ats.ts` (Asset Tokenization Studio contracts, factory `0.0.9213391`, resolver `0.0.9212226`; `issueNoteOnChain` issues the bond, `burnNoteOnChain` calls `controllerRedeemByPartition` to revoke) |
 | Arc — Best Agentic Economy Application with Circle Agent Stack | Effective use of Circle's developer tools for an agent's payments | `src/arc/treasury.ts` (Circle Developer-Controlled Wallet, `@circle-fin/developer-controlled-wallets`), `src/arc/amount.ts` |
@@ -163,6 +190,13 @@ the funded run; nothing here is simulated or fabricated in advance.
 - **The Claude analyst is optional and advisory only.** It never decides to spend — `decide()`
   does, always — and if it refuses or fails, the agent keeps paying and stopping exactly as it
   would otherwise.
+- **Prototype trust boundary.** In this prototype the settlement leg (Circle credentials,
+  `src/arc/treasury.ts`) and the issue/burn leg (the ATS issuer key, `src/hedera/ats.ts`) run in
+  the same process as the agent, for simplicity. In production these belong in a separate
+  treasury/operator service that watches the gate's settled payments and reacts to them — the
+  agent itself should hold only its Hedera float key, never the Circle credentials or the ATS
+  issuer key. No code moved for this prototype; this is a description of where the boundary
+  should sit next, not a change made here.
 - **No transactions have been executed yet at the time of writing this document** — see the
   on-chain evidence section above.
 

@@ -12,7 +12,7 @@ looks real.
 | Time | Screen | Voiceover (English) | Proves |
 |---|---|---|---|
 | 0:00–0:20 | Title card: **Allowance** — "An agent shouldn't hold keys. It should get an allowance." | "Agents can decide to spend money. What stops you leaving one running isn't capability, it's cost. Allowance is the spending brake." | — (hook) |
-| 0:20–0:50 | Panel: allowance issued (5 USDC, expires in 1 hour). HashScan: ATS bond deployment and `issue` to the agent — `<!-- PENDING-TX: ats-bond-deploy -->` / `<!-- PENDING-TX: ats-issue -->`. | "The human issues an allowance note as a tokenized instrument with Hedera's Asset Tokenization Studio contracts, and allocates it to the agent." | Hedera — Tokenization |
+| 0:20–0:50 | Panel: allowance issued (0.03 USDC, expires in 1 hour). HashScan: ATS bond deployment and `issue` to the agent — `<!-- PENDING-TX: ats-bond-deploy -->` / `<!-- PENDING-TX: ats-issue -->`. | "The human issues an allowance note as a tokenized instrument with Hedera's Asset Tokenization Studio contracts, and allocates it to the agent." | Hedera — Tokenization |
 | 0:50–1:40 | Panel: query by query, with the price shown before each one. Terminal: 402 → pay → data. HashScan: x402 payment whose fee payer is `0.0.7162784` (Blocky402) — `<!-- PENDING-TX: x402-payment -->`. | "Every query is paywalled with x402 on Hedera and settled through the Blocky402 facilitator. No payment, no data." | Hedera — Agentic Payments |
 | 1:40–2:10 | Panel: position state and price. Code, briefly: the query to the Messari Standardized Subgraph. | "The data comes from The Graph: a Messari Standardized Subgraph for Uniswap v3 on Base, so one query shape reads both position and prices." | The Graph — Composable/Standardized |
 | 2:10–2:40 | **Key shot.** Panel log line reads, in red: **REFUSED (data is still fresh)** or **REFUSED (too expensive right now)**. | "Here is the point: the agent declines a query. It isn't worth the price yet. The spending rule is deterministic — the model reasons about the data, it never decides to spend." | The Graph — AI (data-grounded decisions) |
@@ -29,8 +29,20 @@ looks real.
   the Hedera and Arc variables the gate and treasury need (see the README setup table).
 - A real position chosen (`WATCH_POSITION_ID`) on the Messari Standardized Subgraph for Uniswap
   v3 on Base.
-- Budget (`ALLOWANCE_AMOUNT_MICRO_USDC`) sized so that **at least one refusal appears** before the
-  note is exhausted — the 2:10–2:40 shot depends on it.
+- Budget: `ALLOWANCE_AMOUNT_MICRO_USDC=30000` (0.03 USDC, `.env.example`'s default) — sized against
+  the catalog's real prices (`token_price` 2,000 microUSDC, `position_state` 12,000 microUSDC) so
+  the note actually reaches exhaustion on camera instead of taking hours. With this budget, the
+  run's events happen in this order: **payments** for both tools in the first round, then
+  `token_price` keeps paying every time it goes stale while `position_state` stays fresh; once the
+  remaining balance drops below `position_state`'s price, its refusal reads **"too expensive right
+  now"** — this is the 2:10–2:40 key shot, and it keeps recurring near the end of the run — until
+  the last `token_price` payment brings the balance to exactly zero and the agent stops itself
+  with **`{ kind: 'stopped', reason: 'exhausted' }`** (3:05–3:30). This whole run takes several
+  minutes of real wall-clock time (the agent waits between rounds when nothing is worth buying);
+  **do not try to compress it into one continuous take** — see the no-simulation rule below: the
+  exhaustion beat (3:05–3:30) is recorded as its own take once the budget has actually drained
+  (started from a fresh, near-empty allowance, or left running until it happens for real) and
+  edited into the final cut, exactly like every other segment.
 - Explorer tabs open and ready: HashScan testnet, Arcscan testnet.
 - System notifications turned off.
 
