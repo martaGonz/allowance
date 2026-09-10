@@ -2,23 +2,14 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { paymentMiddleware } from '@x402/hono';
 import { x402ResourceServer, type FacilitatorClient } from '@x402/core/server';
-import type { SupportedResponse } from '@x402/core/types';
-import { x402Facilitator } from '@x402/core/facilitator';
+import { HTTPFacilitatorClient } from '@x402/core/http';
 import { ExactHederaScheme as ExactHederaServerScheme } from '@x402/hedera/exact/server';
-import { ExactHederaScheme as ExactHederaFacilitatorScheme } from '@x402/hedera/exact/facilitator';
-import {
-  PrivateKey,
-  createHederaClient,
-  createHederaSignAndSubmitTransaction,
-  createHederaVerifyPayerSignature,
-  createHederaPreflightTransfer,
-  type FacilitatorHederaSigner,
-} from '@x402/hedera';
 import { TOOLS, runTool } from '../graph/tools.js';
 import type { GraphClient } from '../graph/client.js';
 import { buildPaymentRoutes, HEDERA_TESTNET_NETWORK, HEDERA_TESTNET_USDC } from './routes.js';
 
 const GATE_PORT = 8402;
+const BLOCKY402_FACILITATOR_URL = 'https://api.testnet.blocky402.com';
 
 /**
  * El núcleo testeable de la puerta: monta el middleware x402 real
@@ -45,48 +36,16 @@ export function createGateApp(resourceServer: x402ResourceServer, client: GraphC
 }
 
 /**
- * Facilitador propio en local: firma con la cuenta del
- * FACILITATOR_*, nunca con la del payer ni un facilitador de terceros.
- * Las claves se leen aquí dentro, no al cargar el módulo.
+ * Nada de facilitador propio. La pista de Hedera exige liquidar a través del
+ * facilitador Blocky402 (verificado en vivo: `GET https://api.testnet.blocky402.com/supported`
+ * responde `{"x402Version":2,"scheme":"exact","network":"hedera:testnet","extra":{"feePayer":
+ * "0.0.7162784"}}`, sin API key). `HTTPFacilitatorClient` (de `@x402/core/http`) ya implementa
+ * `FacilitatorClient` en su totalidad — no hace falta adaptador propio, a diferencia del
+ * facilitador local que este reemplaza. Construido aquí dentro, nunca al cargar el módulo.
  */
-function buildFacilitatorSigner(): FacilitatorHederaSigner {
-  const accountId = process.env.FACILITATOR_ACCOUNT_ID;
-  const privateKeyHex = process.env.FACILITATOR_PRIVATE_KEY;
-  if (!accountId || !privateKeyHex) {
-    throw new Error('FACILITATOR_ACCOUNT_ID/FACILITATOR_PRIVATE_KEY no configuradas: la puerta no puede liquidar pagos');
-  }
-  const feePayerKey = PrivateKey.fromStringECDSA(privateKeyHex);
-  return {
-    getAddresses: () => [accountId],
-    signAndSubmitTransaction: createHederaSignAndSubmitTransaction(
-      (network) => createHederaClient(network),
-      feePayerKey,
-    ),
-    verifyPayerSignature: createHederaVerifyPayerSignature(),
-    preflightTransfer: createHederaPreflightTransfer(),
-  };
-}
-
-/**
- * Adapta el `x402Facilitator` local (verify/settle en proceso, sin red
- * intermediaria) a la interfaz `FacilitatorClient` que pide
- * `x402ResourceServer`. Este adaptador vive en el arranque del servidor,
- * nunca dentro de `createGateApp`.
- */
-function buildLocalFacilitatorClient(): FacilitatorClient {
-  const signer = buildFacilitatorSigner();
-  const facilitator = new x402Facilitator().register(
-    HEDERA_TESTNET_NETWORK,
-    new ExactHederaFacilitatorScheme(signer, { aliasPolicy: 'reject' }),
-  );
-  return {
-    verify: (paymentPayload, paymentRequirements) => facilitator.verify(paymentPayload, paymentRequirements),
-    settle: (paymentPayload, paymentRequirements) => facilitator.settle(paymentPayload, paymentRequirements),
-    // x402Facilitator.getSupported() (paquete @x402/core) tipa `kinds[].network` como
-    // `string` en vez del `Network` de marca `${string}:${string}` que exige
-    // `SupportedResponse` — ver informe: defecto de tipos reportado, no de comportamiento.
-    getSupported: async (): Promise<SupportedResponse> => facilitator.getSupported() as unknown as SupportedResponse,
-  };
+function buildBlocky402FacilitatorClient(): FacilitatorClient {
+  const url = process.env.X402_FACILITATOR_URL ?? BLOCKY402_FACILITATOR_URL;
+  return new HTTPFacilitatorClient({ url });
 }
 
 function buildResourceServer(facilitatorClient: FacilitatorClient): x402ResourceServer {
@@ -108,7 +67,7 @@ function buildGraphClientFromEnv(): GraphClient {
 }
 
 async function main(): Promise<void> {
-  const facilitatorClient = buildLocalFacilitatorClient();
+  const facilitatorClient = buildBlocky402FacilitatorClient();
   const resourceServer = buildResourceServer(facilitatorClient);
   const client = buildGraphClientFromEnv();
   const app = createGateApp(resourceServer, client);
