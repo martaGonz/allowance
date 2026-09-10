@@ -91,9 +91,10 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
         continue;
       }
 
-      // Se comprueba el débito ANTES de pagar y solo se confirma en la nota
-      // DESPUÉS de que el pago tenga éxito. Pagar primero y debitar después podría gastar
-      // dinero real que la contabilidad nunca llegase a registrar.
+      // Se comprueba el débito ANTES de pagar, con la foto de la nota que se
+      // tenía en ese momento. Pagar primero y comprobar después podría gastar dinero real
+      // que la contabilidad nunca llegase a registrar. (El gasto que de verdad se confirma
+      // tras el pago no usa esta foto ni este `debit()` — ver el comentario más abajo.)
       const attempt = debit(note, tool.priceMicroUsdc, deps.now());
       if (!attempt.ok) {
         yield { kind: 'stopped', reason: attempt.reason };
@@ -111,7 +112,19 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
         continue;
       }
 
-      deps.notes.set(attempt.note);
+      // Corrección crítica: `deps.pay` puede tardar, y una
+      // revocación (o el vencimiento de la nota) puede llegar MIENTRAS se espera su
+      // respuesta — el bucle del agente y el panel comparten el mismo bucle de eventos en
+      // main.ts. Confirmar aquí `attempt.note` (la foto de ANTES del await) resucitaría una
+      // nota ya quemada (burned: false), y el siguiente intento seguiría gastando de una
+      // nota que el usuario ya revocó. Por eso se relee la nota EN VIVO después del await y
+      // el gasto se aplica sobre ELLA — preservando `burned`, `expiresAt` y cualquier otro
+      // cambio ocurrido durante el pago — en vez de confirmar `attempt.note`. No se llama a
+      // debit() aquí: una nota ya quemada lo rechazaría, y el pago ya sucedió de verdad, así
+      // que el gasto tiene que quedar contabilizado de todos modos.
+      const live = deps.notes.get();
+      const committed = { ...live, spentMicroUsdc: live.spentMicroUsdc + tool.priceMicroUsdc };
+      deps.notes.set(committed);
       paidSomething = true;
 
       // Ref para la clave de idempotencia de settle — el txId real del pago
@@ -137,9 +150,23 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
           lastPrices.set(price.contract, price);
         }
         lastSeen.set(tool.name, deps.now());
-        yield { kind: 'paid', tool: tool.name, txId: result.txId, remainingMicroUsdc: remaining(attempt.note) };
+        yield { kind: 'paid', tool: tool.name, txId: result.txId, remainingMicroUsdc: remaining(committed) };
       } catch (error) {
         yield { kind: 'failed', tool: tool.name, error: String(error) };
+      }
+
+      // La nota leída en vivo tras el pago (`live`) puede haber sido revocada, o haber
+      // vencido, MIENTRAS ese pago estaba en curso. El gasto que ya sucedió queda
+      // contabilizado arriba pase lo que pase, pero el agente se para aquí mismo — antes de
+      // considerar ninguna herramienta más — en vez de seguir gastando de una nota que el
+      // usuario acaba de revocar o que ya venció durante la espera.
+      if (live.burned) {
+        yield { kind: 'stopped', reason: 'burned' };
+        return;
+      }
+      if (deps.now() > live.expiresAt) {
+        yield { kind: 'stopped', reason: 'expired' };
+        return;
       }
     }
 

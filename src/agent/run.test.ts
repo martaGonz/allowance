@@ -122,6 +122,57 @@ describe('bucle del agente', () => {
     expect(events.at(-1)).toMatchObject({ kind: 'stopped', reason: 'burned' });
   });
 
+  it('una revocación durante un pago en curso no se deshace', async () => {
+    // El bucle del agente y el panel comparten el mismo bucle de eventos en main.ts: una
+    // revocación puede llegar MIENTRAS `pay` todavía está pendiente. El pago x402 ya se
+    // emitió de verdad para cuando eso ocurre, así que confirmarlo tiene que preservar la
+    // quema en vez de resucitar la nota con la foto de antes del await.
+    const note = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+    const store = createNoteStore(note);
+    let payCalls = 0;
+    const settleRefs: string[] = [];
+
+    const events = await collect(
+      baseDeps({
+        notes: store,
+        tools: [priceTool],
+        pay: async () => {
+          payCalls += 1;
+          // La revocación llega EN MITAD del pago, antes de que resuelva.
+          store.set(burn(store.get()));
+          return { status: 200, body: '{}', txId: 'tx-1' };
+        },
+        settle: async (_amount, ref) => {
+          settleRefs.push(ref);
+          return '0xhash';
+        },
+      }),
+    );
+
+    expect(payCalls).toBe(1);
+    expect(store.get().burned).toBe(true);
+    expect(settleRefs).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ kind: 'stopped', reason: 'burned' });
+  });
+
+  it('un gasto hecho mientras la paga se revoca queda contabilizado', async () => {
+    const note = createNote({ amountMicroUsdc: 10_000, expiresAt: Date.now() + HOUR });
+    const store = createNoteStore(note);
+
+    await collect(
+      baseDeps({
+        notes: store,
+        tools: [priceTool],
+        pay: async () => {
+          store.set(burn(store.get()));
+          return { status: 200, body: '{}', txId: 'tx-1' };
+        },
+      }),
+    );
+
+    expect(store.get().spentMicroUsdc).toBe(2_000);
+  });
+
   it('cuando todo sigue fresco, el agente espera y no se para', async () => {
     const note = createNote({ amountMicroUsdc: 1_000_000, expiresAt: Date.now() + HOUR });
     const freshTool: ToolSpec = { name: 'token_price', description: '', priceMicroUsdc: 2_000, maxStaleMs: HOUR };
