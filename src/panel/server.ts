@@ -133,6 +133,10 @@ export function startPanel(notes: NoteStore, bus: EventBus, onChain?: OnChainBur
   // `exactOptionalPropertyTypes` distingue "propiedad ausente" de "propiedad presente con
   // valor undefined": se extiende condicionalmente en vez de pasar `onChain` siempre.
   const app = createPanelApp({ notes, bus, indexHtml: readIndexHtml(), ...(onChain ? { onChain } : {}) });
-  serve({ fetch: app.fetch, port: PANEL_PORT });
-  console.log(`panel escuchando en :${PANEL_PORT}`);
+  // Minor de la revisión de rama completa: el panel controla la revocación en cadena y muestra
+  // el estado de la paga — no hay razón para escucharlo en todas las interfaces de red. Se ata
+  // a loopback explícitamente en vez de dejar que @hono/node-server use su default (que en
+  // algunas plataformas es '0.0.0.0', accesible desde fuera de la máquina).
+  serve({ fetch: app.fetch, port: PANEL_PORT, hostname: '127.0.0.1' });
+  console.log(`panel escuchando en http://127.0.0.1:${PANEL_PORT}`);
 }

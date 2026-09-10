@@ -94,6 +94,16 @@ async function main(): Promise<void> {
 
   startPanel(notes, bus, onChain);
 
+  // Minor de la revisión de rama completa: antes de este cambio, `liveAnalyst()` se construía
+  // siempre — sin ANTHROPIC_API_KEY, `new Anthropic()` no lanza (resuelve la clave sola y la
+  // deja en null), así que el agente igual la llamaba cada ronda con pago, solo para fallar
+  // con un 401 y emitir `analysis_failed` una y otra vez. Se construye y se pasa el analista
+  // solo si la clave está configurada; si no, se registra una sola línea y se corre sin él —
+  // decide() sigue siendo el único que gasta de cualquier modo.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log('ANTHROPIC_API_KEY no configurada: el agente corre sin analista Claude (sigue gastando y parándose igual)');
+  }
+
   const deps: AgentDeps = {
     notes,
     tools: TOOLS,
@@ -102,7 +112,7 @@ async function main(): Promise<void> {
     settle: liveSettle,
     wait,
     now: () => Date.now(),
-    analyst: liveAnalyst(),
+    ...(process.env.ANTHROPIC_API_KEY ? { analyst: liveAnalyst() } : {}),
   };
 
   console.log(`agente arrancado: paga de ${note.amountMicroUsdc} microUSDC, vence en ${note.expiresAt}`);

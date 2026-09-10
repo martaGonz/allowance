@@ -336,6 +336,32 @@
       }
     }
 
+    // Minor de la revisión de rama completa: el tx id del pago x402 en Hedera es un hash real
+    // (dato que llega por el bus de eventos), así que se enlaza a HashScan igual que los demás
+    // hashes on-chain del panel — construido con createElement/textContent, nunca innerHTML.
+    // Sin recibo (`txId: null`, por ejemplo un settle que no liquidó) se muestra "no receipt"
+    // en vez de un enlace roto.
+    function addPaidLogLine(event) {
+      var li = document.createElement('li');
+      li.className = 'paid';
+      li.appendChild(document.createTextNode(toolLabel(event.tool) + ' paid — tx '));
+      if (event.txId) {
+        var a = document.createElement('a');
+        a.href = HASHSCAN_TESTNET + '/transaction/' + event.txId;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = event.txId;
+        li.appendChild(a);
+      } else {
+        li.appendChild(document.createTextNode('no receipt'));
+      }
+      li.appendChild(document.createTextNode(' — remaining ' + usd(event.remainingMicroUsdc)));
+      els.logList.insertBefore(li, els.logList.firstChild);
+      while (els.logList.children.length > LOG_LIMIT) {
+        els.logList.removeChild(els.logList.lastChild);
+      }
+    }
+
     function setAnalyst(level, summary) {
       els.analystLevel.className = 'level-pill ' + level;
       els.analystLevel.textContent = levelLabel(level);
@@ -371,7 +397,7 @@
         case 'paid': {
           state.remainingMicroUsdc = event.remainingMicroUsdc;
           renderBudget();
-          addLogLine('paid', toolLabel(event.tool) + ' paid — tx ' + (event.txId || 'no tx') + ' — remaining ' + usd(event.remainingMicroUsdc));
+          addPaidLogLine(event);
           break;
         }
         case 'failed': {
