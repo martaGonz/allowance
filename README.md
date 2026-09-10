@@ -91,15 +91,18 @@ cp .env.example .env
 `.env.example` is already complete and secret-free — every variable read anywhere in `src/` is
 listed there. Fill in only what the feature you want to run needs:
 
-| Feature | Variables |
+| Runs with... | Needs |
 |---|---|
-| Query The Graph | `GRAPH_API_KEY`, `GRAPH_SUBGRAPH_URL` |
-| Run the x402 gate | `HEDERA_ACCOUNT_ID`, `HEDERA_PRIVATE_KEY`, `HEDERA_EVM_ADDRESS`, `GATE_PAYTO_ACCOUNT_ID`, `X402_FACILITATOR_URL`, `GATE_URL` |
-| Settle on Arc | `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, `CIRCLE_WALLET_ID`, `CIRCLE_WALLET_ADDRESS`, `ARC_OPERATOR_ADDRESS`, `ARC_CHAIN_ID`, `ARC_RPC_URL` |
-| Claude analyst | `ANTHROPIC_API_KEY` |
-| Agent entry point | `ALLOWANCE_AMOUNT_MICRO_USDC`, `ALLOWANCE_TTL_MS`, `WATCH_POSITION_ID`, `WATCH_TOKEN_CONTRACT` |
-| Panel | `PANEL_PORT` |
-| Tokenize the note in ATS (optional) | `ATS_ISSUER_PRIVATE_KEY`, `ATS_FACTORY_ID`, `ATS_RESOLVER_ID`, `HEDERA_RPC_RELAY` — if these are absent, the agent still runs, with the note kept in memory only |
+| `npm run gate` (`src/gate/server.ts`) | `GRAPH_API_KEY`, `GRAPH_SUBGRAPH_URL` (serves the tool data), `GATE_PAYTO_ACCOUNT_ID` (who gets paid), `X402_FACILITATOR_URL` (Blocky402, already defaulted in `.env.example`) |
+| `npm run mcp` (`src/mcp/server.ts`) | `GATE_URL` (where the gate it calls is listening) |
+| `npm run agent` (`src/agent/main.ts`) — paying the gate | `GATE_URL`, `HEDERA_ACCOUNT_ID`, `HEDERA_PRIVATE_KEY` |
+| `npm run agent` — settling on Arc | `ARC_OPERATOR_ADDRESS`, `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, `CIRCLE_WALLET_ID`, `ARC_CHAIN_ID`, `ARC_RPC_URL` |
+| `npm run agent` — the note and what it watches | `ALLOWANCE_AMOUNT_MICRO_USDC`, `ALLOWANCE_TTL_MS`, `WATCH_POSITION_ID`, `WATCH_TOKEN_CONTRACT`, `PANEL_PORT` |
+| `npm run agent` — Claude analyst (optional) | `ANTHROPIC_API_KEY` — without it the agent still spends and stops correctly, it just stops producing alerts |
+| `npm run agent` — tokenize the note in ATS (optional) | `ATS_ISSUER_PRIVATE_KEY`, `HEDERA_EVM_ADDRESS`, `ATS_FACTORY_ID`, `ATS_RESOLVER_ID`, `HEDERA_RPC_RELAY` — if `ATS_ISSUER_PRIVATE_KEY` or `HEDERA_EVM_ADDRESS` is absent, the agent still runs, with the note kept in memory only |
+
+`CIRCLE_WALLET_ADDRESS` is not read by any of the above — it is the treasury's own address, kept
+in `.env.example` for looking the wallet up on Arcscan.
 
 None of this is required to install the project or run its tests: every test is self-contained
 and network-free, setting and restoring any environment variable it needs.
@@ -115,9 +118,9 @@ npm test
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm run gate         # x402 payment gate — src/gate/server.ts
-npm run mcp          # priced tools over MCP — src/mcp/server.ts
-npm run agent         # the agent loop + panel — src/agent/main.ts
+npm run gate         # x402 payment gate         — src/gate/server.ts
+npm run mcp          # priced tools over MCP      — src/mcp/server.ts
+npm run agent        # the agent loop + panel     — src/agent/main.ts
 ```
 
 `npm run agent` starts the panel (default `http://localhost:8787`) and the spending loop
