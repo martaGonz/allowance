@@ -1,0 +1,102 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { x402ResourceServer, type FacilitatorClient } from '@x402/core/server';
+import type { SupportedResponse, VerifyResponse, SettleResponse } from '@x402/core/types';
+import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from '@x402/core/http';
+import { ExactHederaScheme } from '@x402/hedera/exact/server';
+import { createGateApp } from './server.js';
+import type { GraphClient } from '../graph/client.js';
+
+const FEE_PAYER = '0.0.999999';
+const HEDERA_TESTNET_USDC = '0.0.429274';
+
+type FakeFacilitatorClient = FacilitatorClient & {
+  verify: ReturnType<typeof vi.fn>;
+  settle: ReturnType<typeof vi.fn>;
+  getSupported: ReturnType<typeof vi.fn>;
+};
+
+function fakeFacilitatorClient(): FakeFacilitatorClient {
+  return {
+    verify: vi.fn(async (): Promise<VerifyResponse> => ({ isValid: true, payer: '0.0.111111' })),
+    settle: vi.fn(async (): Promise<SettleResponse> => ({
+      success: true,
+      transaction: 'esto-no-deberia-liquidarse',
+      network: 'hedera:testnet',
+    })),
+    getSupported: vi.fn(async (): Promise<SupportedResponse> => ({
+      kinds: [{ x402Version: 2, scheme: 'exact', network: 'hedera:testnet', extra: { feePayer: FEE_PAYER } }],
+      extensions: [],
+      signers: { 'hedera:*': [FEE_PAYER] },
+    })),
+  };
+}
+
+function buildResourceServer(facilitatorClient: FacilitatorClient) {
+  return new x402ResourceServer(facilitatorClient).register(
+    'hedera:testnet',
+    new ExactHederaScheme({ defaultAssets: { 'hedera:testnet': { asset: HEDERA_TESTNET_USDC, decimals: 6 } } }),
+  );
+}
+
+function fakeGraphClient(fetchImpl: typeof fetch): GraphClient {
+  return { subgraphUrl: '', tokenApiUrl: '', apiKey: '', fetch: fetchImpl };
+}
+
+describe('puerta x402 sobre Hedera', () => {
+  const originalPayTo = process.env.GATE_PAYTO_ACCOUNT_ID;
+
+  beforeEach(() => {
+    // buildPaymentRoutes lee GATE_PAYTO_ACCOUNT_ID dentro de la función (no al cargar el módulo);
+    // el test le da una cuenta de mentira, nunca usada para pagar de verdad.
+    process.env.GATE_PAYTO_ACCOUNT_ID = '0.0.500000';
+  });
+
+  afterEach(() => {
+    if (originalPayTo === undefined) delete process.env.GATE_PAYTO_ACCOUNT_ID;
+    else process.env.GATE_PAYTO_ACCOUNT_ID = originalPayTo;
+  });
+
+  it('responde 402 sin pago, con el middleware real de @x402/hono y un facilitador falso inyectado', async () => {
+    const facilitatorClient = fakeFacilitatorClient();
+    const neverCalled = (async () => {
+      throw new Error('el handler no debería ejecutarse sin pago');
+    }) as unknown as typeof fetch;
+    const app = createGateApp(buildResourceServer(facilitatorClient), fakeGraphClient(neverCalled));
+
+    const res = await app.request('/tools/token_price?contract=0xa');
+
+    expect(res.status).toBe(402);
+    expect(facilitatorClient.verify).not.toHaveBeenCalled();
+  });
+
+  it('una petición pagada cuyo runTool lanza devuelve error y no liquida nada', async () => {
+    const facilitatorClient = fakeFacilitatorClient();
+    const brokenFetch = (async () => {
+      throw new Error('The Graph no responde');
+    }) as unknown as typeof fetch;
+    const app = createGateApp(buildResourceServer(facilitatorClient), fakeGraphClient(brokenFetch));
+
+    // Primera petición sin pago, solo para leer las payment requirements reales que la puerta anunció.
+    const unpaid = await app.request('/tools/token_price?contract=0xa');
+    const requiredHeader = unpaid.headers.get('payment-required');
+    expect(requiredHeader).toBeTruthy();
+    const required = decodePaymentRequiredHeader(requiredHeader!);
+    const accepted = required.accepts[0];
+    expect(accepted).toBeDefined();
+
+    const paymentPayload = {
+      x402Version: required.x402Version,
+      accepted,
+      payload: { transaction: 'ZmFrZQ==' },
+    };
+    const paidHeader = encodePaymentSignatureHeader(paymentPayload as never);
+
+    const res = await app.request('/tools/token_price?contract=0xa', {
+      headers: { 'PAYMENT-SIGNATURE': paidHeader },
+    });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(facilitatorClient.verify).toHaveBeenCalledTimes(1);
+    expect(facilitatorClient.settle).not.toHaveBeenCalled();
+  });
+});
