@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { TOOLS, type ToolSpec } from '../graph/tools.js';
+import { buildGateUrl } from './gate-url.js';
 
 const GATE_URL = process.env.GATE_URL ?? 'http://localhost:8402';
 
@@ -21,7 +22,7 @@ server.registerTool(
     inputSchema: { contract: z.string() },
   },
   async ({ contract }) => {
-    const res = await fetch(`${GATE_URL}/tools/token_price?contract=${contract}`);
+    const res = await fetch(buildGateUrl(GATE_URL, 'token_price', { contract }));
     const text = await res.text();
     return { content: [{ type: 'text', text: res.status === 402 ? `402 pago requerido: ${text}` : text }] };
   },
@@ -35,7 +36,7 @@ server.registerTool(
     inputSchema: { positionId: z.string() },
   },
   async ({ positionId }) => {
-    const res = await fetch(`${GATE_URL}/tools/position_state?positionId=${positionId}`);
+    const res = await fetch(buildGateUrl(GATE_URL, 'position_state', { positionId }));
     const text = await res.text();
     return { content: [{ type: 'text', text: res.status === 402 ? `402 pago requerido: ${text}` : text }] };
   },
