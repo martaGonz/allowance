@@ -20,7 +20,12 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@x402/core": "^2.25.0",
+    "@x402/hedera": "^2.25.0",
+    "@x402/hono": "^2.25.0",
+    "hono": "^4.13.7",
     "zod": "^4.6.1"
   }
 }
