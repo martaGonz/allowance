@@ -76,7 +76,6 @@ function buildResourceServer(): x402ResourceServer {
 
 const inertGraphClient: GraphClient = {
   subgraphUrl: '',
-  tokenApiUrl: '',
   apiKey: '',
   fetch: (async () => {
     throw new Error('esta prueba nunca debería intentar tocar The Graph');

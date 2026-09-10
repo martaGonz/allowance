@@ -13,7 +13,7 @@ describe('catálogo de herramientas', () => {
   });
 
   it('una herramienta desconocida no se ejecuta', async () => {
-    const client = { subgraphUrl: '', tokenApiUrl: '', apiKey: '', fetch: globalThis.fetch };
+    const client = { subgraphUrl: '', apiKey: '', fetch: globalThis.fetch };
     await expect(runTool('inventada', {}, client)).rejects.toThrow('herramienta desconocida: inventada');
   });
 });

@@ -60,7 +60,6 @@ function buildResourceServer(facilitatorClient: FacilitatorClient): x402Resource
 function buildGraphClientFromEnv(): GraphClient {
   return {
     subgraphUrl: process.env.GRAPH_SUBGRAPH_URL ?? '',
-    tokenApiUrl: process.env.GRAPH_TOKEN_API_URL ?? '',
     apiKey: process.env.GRAPH_API_KEY ?? '',
     fetch: globalThis.fetch,
   };

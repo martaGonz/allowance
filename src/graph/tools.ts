@@ -10,7 +10,7 @@ export type ToolSpec = {
 export const TOOLS: ToolSpec[] = [
   {
     name: 'token_price',
-    description: 'Precio en USD de un token en Base, vía Token API de The Graph.',
+    description: 'Precio en USD de un token en Base, vía el Standardized Subgraph de Messari en The Graph.',
     priceMicroUsdc: 2_000,
     maxStaleMs: 60_000,
   },

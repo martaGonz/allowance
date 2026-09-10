@@ -39,7 +39,7 @@ function buildResourceServer(facilitatorClient: FacilitatorClient) {
 }
 
 function fakeGraphClient(fetchImpl: typeof fetch): GraphClient {
-  return { subgraphUrl: '', tokenApiUrl: '', apiKey: '', fetch: fetchImpl };
+  return { subgraphUrl: '', apiKey: '', fetch: fetchImpl };
 }
 
 describe('puerta x402 sobre Hedera', () => {
