@@ -1,0 +1,112 @@
+import { describe, it, expect } from 'vitest';
+import type Anthropic from '@anthropic-ai/sdk';
+import { analyzePosition, type AnalystDeps, type PositionFacts } from './analyst.js';
+
+const FACTS: PositionFacts = {
+  position: { positionId: 'p1', liquidity: '1000', liquidityUsd: '2000', token0: '0xa', token1: '0xb', closed: false },
+  prices: [{ contract: '0xa', priceUsd: 1.5, asOf: 1_757_000_000_000 }],
+  spentMicroUsdc: 14_000,
+  remainingMicroUsdc: 86_000,
+  refusedTools: [],
+};
+
+/**
+ * Construye un `BetaMessage` mínimo con un único bloque de texto. El resto de
+ * campos son los que exige el tipo, pero al analista solo le importan
+ * `stop_reason` y `content`.
+ */
+function textMessage(text: string, stopReason: Anthropic.Beta.BetaStopReason = 'end_turn'): Anthropic.Beta.BetaMessage {
+  return {
+    id: 'msg_1',
+    container: null,
+    content: [{ type: 'text', text, citations: null }],
+    context_management: null,
+    diagnostics: null,
+    model: 'claude-opus-5',
+    role: 'assistant',
+    stop_details: null,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    type: 'message',
+    usage: {
+      input_tokens: 1,
+      output_tokens: 1,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      cache_creation: null,
+      server_tool_use: null,
+      service_tier: null,
+    },
+    input_transformations: [],
+  } as unknown as Anthropic.Beta.BetaMessage;
+}
+
+describe('el analista de Claude', () => {
+  it('un texto que empieza por ACTUAR produce el nivel actuar', async () => {
+    const deps: AnalystDeps = {
+      create: async () => textMessage('ACTUAR: la posición se ha cerrado, revisa ya el estado real.'),
+    };
+
+    const result = await analyzePosition(deps, FACTS);
+
+    expect(result).toMatchObject({ kind: 'alert', level: 'actuar' });
+  });
+
+  it('un texto que empieza por OK produce el nivel ok', async () => {
+    const deps: AnalystDeps = { create: async () => textMessage('OK todo dentro de rango por ahora.') };
+
+    const result = await analyzePosition(deps, FACTS);
+
+    expect(result).toMatchObject({ kind: 'alert', level: 'ok' });
+  });
+
+  it('un stop_reason de refusal se traduce en refused sin leer content', async () => {
+    // `content` es un getter que lanza si se lee: si analyzePosition mirase el
+    // texto antes de comprobar stop_reason, esta prueba fallaría por la excepción
+    // en vez de por una aserción incorrecta.
+    const base = textMessage('esto nunca debería leerse');
+    const poisoned = {
+      ...base,
+      stop_reason: 'refusal' as const,
+      get content(): Anthropic.Beta.BetaContentBlock[] {
+        throw new Error('no debería leerse content tras un rechazo');
+      },
+    } as unknown as Anthropic.Beta.BetaMessage;
+    const deps: AnalystDeps = { create: async () => poisoned };
+
+    const result = await analyzePosition(deps, FACTS);
+
+    expect(result).toEqual({ kind: 'refused' });
+  });
+
+  it('una primera palabra que no es OK, VIGILAR ni ACTUAR se trata como vigilar', async () => {
+    const deps: AnalystDeps = { create: async () => textMessage('mmm no sabría decir con certeza.') };
+
+    const result = await analyzePosition(deps, FACTS);
+
+    expect(result).toMatchObject({ kind: 'alert', level: 'vigilar' });
+  });
+
+  it('la petición enviada lleva el modelo, el fallback y el effort exactos', async () => {
+    let sent: Anthropic.Beta.MessageCreateParamsNonStreaming | undefined;
+    const deps: AnalystDeps = {
+      create: async (params) => {
+        sent = params;
+        return textMessage('VIGILAR de cerca la próxima hora.');
+      },
+    };
+
+    await analyzePosition(deps, FACTS);
+
+    expect(sent?.model).toBe('claude-opus-5');
+    expect(sent?.fallbacks).toBe('default');
+    expect(sent?.betas).toContain('server-side-fallback-2026-07-01');
+    expect(sent?.output_config).toEqual({ effort: 'low' });
+    expect(typeof sent?.system).toBe('string');
+    expect(sent?.messages).toHaveLength(1);
+    const userContent = sent?.messages[0]?.content;
+    expect(typeof userContent).toBe('string');
+    const parsedFacts = JSON.parse(userContent as string);
+    expect(parsedFacts).toEqual(FACTS);
+  });
+});
