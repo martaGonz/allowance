@@ -39,7 +39,7 @@ flowchart LR
     MCP -->|"query"| Gate
     Gate -->|"402, then data after payment"| GraphSub
     GraphSub -->|"position + token price"| Base
-    Gate -->|"settle paid query in USDC"| Treasury
+    AgentLoop -->|"settle paid query in USDC"| Treasury
     AgentLoop -->|"events"| Panel
 ```
 
