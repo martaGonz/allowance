@@ -57,12 +57,23 @@ function buildResourceServer(facilitatorClient: FacilitatorClient): x402Resource
   );
 }
 
-function buildGraphClientFromEnv(): GraphClient {
-  return {
-    subgraphUrl: process.env.GRAPH_SUBGRAPH_URL ?? '',
-    apiKey: process.env.GRAPH_API_KEY ?? '',
-    fetch: globalThis.fetch,
-  };
+/**
+ * Hallazgo crítico 2 de la revisión de rama completa: sin `.env` cargado (o con una variable
+ * simplemente olvidada), esto defaulteaba en silencio a `''` y la puerta arrancaba "bien" para
+ * fallar de forma confusa en la primera consulta. Lanza nombrando la variable ausente, igual
+ * que `liveSettleDeps` (arc/treasury.ts) y `liveAtsDeps` (hedera/ats.ts) ya hacen para sus
+ * propias credenciales.
+ */
+export function buildGraphClientFromEnv(): GraphClient {
+  const subgraphUrl = process.env.GRAPH_SUBGRAPH_URL;
+  if (!subgraphUrl) {
+    throw new Error('GRAPH_SUBGRAPH_URL no configurada: la puerta no puede consultar The Graph');
+  }
+  const apiKey = process.env.GRAPH_API_KEY;
+  if (!apiKey) {
+    throw new Error('GRAPH_API_KEY no configurada: la puerta no puede consultar The Graph');
+  }
+  return { subgraphUrl, apiKey, fetch: globalThis.fetch };
 }
 
 async function main(): Promise<void> {

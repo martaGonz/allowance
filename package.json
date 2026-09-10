@@ -1,20 +1,17 @@
 {
   "name": "allowance",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "An agent shouldn't hold keys. It should get an allowance.",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "agent": "tsx src/agent/main.ts",
-    "gate": "tsx src/gate/server.ts",
-    "mcp": "tsx src/mcp/server.ts"
+    "agent": "tsx --env-file=.env src/agent/main.ts",
+    "gate": "tsx --env-file=.env src/gate/server.ts",
+    "mcp": "tsx --env-file=.env src/mcp/server.ts"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {

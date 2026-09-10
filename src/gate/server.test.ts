@@ -3,7 +3,7 @@ import { x402ResourceServer, type FacilitatorClient } from '@x402/core/server';
 import type { SupportedResponse, VerifyResponse, SettleResponse } from '@x402/core/types';
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from '@x402/core/http';
 import { ExactHederaScheme } from '@x402/hedera/exact/server';
-import { createGateApp } from './server.js';
+import { createGateApp, buildGraphClientFromEnv } from './server.js';
 import type { GraphClient } from '../graph/client.js';
 
 const FEE_PAYER = '0.0.999999';
@@ -98,5 +98,44 @@ describe('puerta x402 sobre Hedera', () => {
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(facilitatorClient.verify).toHaveBeenCalledTimes(1);
     expect(facilitatorClient.settle).not.toHaveBeenCalled();
+  });
+});
+
+// Hallazgo crítico 2 de la revisión de rama completa: antes de este arreglo,
+// `buildGraphClientFromEnv` defaulteaba en silencio a `''` cuando faltaba GRAPH_SUBGRAPH_URL
+// o GRAPH_API_KEY, así que la puerta arrancaba "bien" y solo fallaba de forma confusa en la
+// primera consulta. Debe lanzar nombrando la variable que falta, igual que `liveSettleDeps`
+// (arc/treasury.ts) y `liveAtsDeps` (hedera/ats.ts) ya hacen para sus propias credenciales.
+describe('buildGraphClientFromEnv', () => {
+  const originalUrl = process.env.GRAPH_SUBGRAPH_URL;
+  const originalKey = process.env.GRAPH_API_KEY;
+
+  afterEach(() => {
+    if (originalUrl === undefined) delete process.env.GRAPH_SUBGRAPH_URL;
+    else process.env.GRAPH_SUBGRAPH_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.GRAPH_API_KEY;
+    else process.env.GRAPH_API_KEY = originalKey;
+  });
+
+  it('lanza nombrando GRAPH_SUBGRAPH_URL si falta', () => {
+    delete process.env.GRAPH_SUBGRAPH_URL;
+    process.env.GRAPH_API_KEY = 'una-clave';
+    expect(() => buildGraphClientFromEnv()).toThrow(/GRAPH_SUBGRAPH_URL/);
+  });
+
+  it('lanza nombrando GRAPH_API_KEY si falta', () => {
+    process.env.GRAPH_SUBGRAPH_URL = 'https://example.com/subgraph';
+    delete process.env.GRAPH_API_KEY;
+    expect(() => buildGraphClientFromEnv()).toThrow(/GRAPH_API_KEY/);
+  });
+
+  it('construye el cliente cuando ambas variables están presentes, sin defaultear a cadena vacía', () => {
+    process.env.GRAPH_SUBGRAPH_URL = 'https://example.com/subgraph';
+    process.env.GRAPH_API_KEY = 'una-clave';
+
+    const client = buildGraphClientFromEnv();
+
+    expect(client.subgraphUrl).toBe('https://example.com/subgraph');
+    expect(client.apiKey).toBe('una-clave');
   });
 });
