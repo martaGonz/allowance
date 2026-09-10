@@ -37,4 +37,26 @@ describe('paga', () => {
     debit(note, 999, T0);
     expect(remaining(note)).toBe(100);
   });
+
+  it('un débito negativo se rechaza y no aumenta el saldo', () => {
+    const note = createNote({ amountMicroUsdc: 1_000, expiresAt: T0 + HOUR });
+    expect(() => debit(note, -500, T0)).toThrow(RangeError);
+    expect(remaining(note)).toBe(1_000);
+  });
+
+  it('un débito con decimales se rechaza', () => {
+    const note = createNote({ amountMicroUsdc: 1_000, expiresAt: T0 + HOUR });
+    expect(() => debit(note, 0.5, T0)).toThrow(RangeError);
+  });
+
+  it('un débito de cero se rechaza', () => {
+    const note = createNote({ amountMicroUsdc: 1_000, expiresAt: T0 + HOUR });
+    expect(() => debit(note, 0, T0)).toThrow(RangeError);
+  });
+
+  it('no se puede emitir una nota con importe no positivo o con decimales', () => {
+    expect(() => createNote({ amountMicroUsdc: -100, expiresAt: T0 + HOUR })).toThrow(RangeError);
+    expect(() => createNote({ amountMicroUsdc: 0, expiresAt: T0 + HOUR })).toThrow(RangeError);
+    expect(() => createNote({ amountMicroUsdc: 1.5, expiresAt: T0 + HOUR })).toThrow(RangeError);
+  });
 });

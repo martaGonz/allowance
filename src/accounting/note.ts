@@ -13,6 +13,9 @@ export type DebitResult =
   | { ok: false; reason: 'exhausted' | 'expired' | 'burned'; note: Note };
 
 export function createNote(input: { amountMicroUsdc: number; expiresAt: number }): Note {
+  if (!Number.isInteger(input.amountMicroUsdc) || input.amountMicroUsdc <= 0) {
+    throw new RangeError(`importe inválido: ${input.amountMicroUsdc}`);
+  }
   return {
     id: randomUUID(),
     amountMicroUsdc: input.amountMicroUsdc,
@@ -31,6 +34,9 @@ export function burn(note: Note): Note {
 }
 
 export function debit(note: Note, amountMicroUsdc: number, now: number): DebitResult {
+  if (!Number.isInteger(amountMicroUsdc) || amountMicroUsdc <= 0) {
+    throw new RangeError(`importe inválido: ${amountMicroUsdc}`);
+  }
   if (note.burned) return { ok: false, reason: 'burned', note };
   if (now > note.expiresAt) return { ok: false, reason: 'expired', note };
   if (amountMicroUsdc > remaining(note)) return { ok: false, reason: 'exhausted', note };
