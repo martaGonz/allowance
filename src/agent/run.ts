@@ -74,6 +74,9 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
   const lastPrices = new Map<string, TokenPrice>();
   let lastPosition: PositionState | null = null;
   let round = 0;
+  // Consultas rechazadas desde el último análisis (no solo en la ronda que paga): el analista
+  // tiene que saber que el agente dejó de comprar datos entre medias.
+  const refusedSinceAnalysis = new Set<string>();
 
   while (true) {
     round += 1;
@@ -83,7 +86,6 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
     }
 
     let paidSomething = false;
-    const refusedTools: string[] = [];
 
     for (const tool of deps.tools) {
       // La nota se lee del almacén compartido en cada intento, nunca de una
@@ -100,7 +102,7 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
       yield { kind: 'considered', tool: tool.name, priceMicroUsdc: tool.priceMicroUsdc, decision };
 
       if (!decision.pay) {
-        refusedTools.push(tool.name);
+        refusedSinceAnalysis.add(tool.name);
         continue;
       }
 
@@ -217,8 +219,9 @@ export async function* runAgent(deps: AgentDeps): AsyncGenerator<AgentEvent> {
         prices: [...lastPrices.values()],
         spentMicroUsdc: note.spentMicroUsdc,
         remainingMicroUsdc: remaining(note),
-        refusedTools,
+        refusedTools: [...refusedSinceAnalysis],
       };
+      refusedSinceAnalysis.clear();
       try {
         const result = await analyzePosition(deps.analyst, facts);
         if (result.kind === 'refused') {

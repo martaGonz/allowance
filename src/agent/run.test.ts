@@ -496,6 +496,37 @@ describe('bucle del agente', () => {
     });
   });
 
+  it('el analista recibe las consultas rechazadas desde el último análisis, no solo las de su ronda', async () => {
+    let clock = 1_000_000;
+    const staleTool = (name: string, price: number): ToolSpec => ({ name, description: '', priceMicroUsdc: price, maxStaleMs: 100 });
+    const received: Array<{ refusedTools: string[] }> = [];
+    const analyst: AnalystDeps = {
+      create: async (params) => {
+        received.push(JSON.parse(params.messages[0]?.content as string));
+        return { content: [{ type: 'text', text: 'OK.', citations: null }], stop_reason: 'end_turn' } as never;
+      },
+    };
+    await collect(
+      baseDeps({
+        notes: createNoteStore(createNote({ amountMicroUsdc: 1_000_000, expiresAt: Date.now() + HOUR })),
+        tools: [staleTool('position_state', 12_000), staleTool('token_price', 2_000)],
+        pay: async (tool) =>
+          tool.name === 'position_state'
+            ? { status: 200, body: JSON.stringify({ positionId: 'p1', liquidity: '1', liquidityUsd: '0', token0: '0xTOKEN0', token1: '0xT1', closed: false }), txId: 'tx-pos' }
+            : { status: 200, body: '{"contract":"0xTOKEN0","priceUsd":2.5,"asOf":1}', txId: 'tx-price' },
+        now: () => clock,
+        wait: async () => {
+          clock += 200;
+        },
+        analyst,
+        maxRounds: 3,
+      }),
+    );
+    expect(received).toHaveLength(2);
+    expect(received[0]?.refusedTools).toEqual([]);
+    expect(received[1]?.refusedTools).toEqual(['position_state', 'token_price']);
+  });
+
   it('sin position_state pagada nunca, no se llama al analista aunque haya pagos', async () => {
     const note = createNote({ amountMicroUsdc: 1_000_000, expiresAt: Date.now() + HOUR });
     let analystCalled = false;
