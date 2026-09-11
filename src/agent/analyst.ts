@@ -54,6 +54,14 @@ function parseLevel(text: string): AnalystLevel {
   return 'vigilar';
 }
 
+/**
+ * El modelo a veces escapa símbolos de Markdown (`\$`, `\*`, `\_`); el panel muestra texto plano,
+ * así que se retiran esas barras para que no aparezcan en pantalla.
+ */
+export function cleanSummary(text: string): string {
+  return text.trim().replace(/\\([$*_`#~>\[\]()])/g, '$1');
+}
+
 export async function analyzePosition(deps: AnalystDeps, facts: PositionFacts): Promise<AnalystResult> {
   const response = await deps.create({
     model: MODEL,
@@ -76,5 +84,5 @@ export async function analyzePosition(deps: AnalystDeps, facts: PositionFacts): 
     if (block.type === 'text') text += block.text;
   }
 
-  return { kind: 'alert', level: parseLevel(text), summary: text.trim() };
+  return { kind: 'alert', level: parseLevel(text), summary: cleanSummary(text) };
 }

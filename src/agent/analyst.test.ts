@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import { analyzePosition, type AnalystDeps, type PositionFacts } from './analyst.js';
+import { analyzePosition, type AnalystDeps, type PositionFacts, cleanSummary } from './analyst.js';
 
 const FACTS: PositionFacts = {
   position: { positionId: 'p1', liquidity: '1000', liquidityUsd: '2000', token0: '0xa', token1: '0xb', closed: false },
@@ -40,6 +40,12 @@ function textMessage(text: string, stopReason: Anthropic.Beta.BetaStopReason = '
     input_transformations: [],
   } as unknown as Anthropic.Beta.BetaMessage;
 }
+
+describe('cleanSummary', () => {
+  it('quita las barras de escape de Markdown sin tocar el resto', () => {
+    expect(cleanSummary('WATCH — WETH a \\$2,578.99 y `liquidityUsd` en \\*cero\\*')).toBe('WATCH — WETH a $2,578.99 y `liquidityUsd` en *cero*');
+  });
+});
 
 describe('el analista de Claude', () => {
   it('a text starting with ACT produces level actuar', async () => {
