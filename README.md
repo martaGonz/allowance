@@ -176,7 +176,7 @@ the funded run; nothing here is simulated or fabricated in advance.
 | ATS issue to the agent (`issue`) | HashScan testnet | [issue to the agent](https://hashscan.io/testnet/transaction/0xac81cd9ccf2aca4b61f65d39feddb385baffbd410a20138acd08dee75e35df7b) |
 | x402 payment settled by Blocky402 (fee payer `0.0.7162784`) | HashScan testnet | <!-- PENDING-TX: x402-payment --> |
 | Arc settlement from the Circle wallet | Arcscan testnet | <!-- PENDING-TX: arc-settlement --> |
-| ATS burn on revoke (`controllerRedeemByPartition`) | HashScan testnet | <!-- PENDING-TX: ats-burn --> |
+| ATS burn on revoke (`controllerRedeemByPartition`) | HashScan testnet | [controllerRedeemByPartition burn](https://hashscan.io/testnet/transaction/0xcff2ceebe895b88eff909bdcdf1017913f173bc8e9f44751ba6ac141cf2635ef) |
 
 ## Limitations
 
