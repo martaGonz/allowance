@@ -5,9 +5,7 @@ Hedera for 5 or fewer, Arc requires a video with a walkthrough.
 
 Voiceover in English (international judges), optional subtitles. Screen recording at 1080p,
 terminal and panel side by side. **Real payments only, never simulated** — every transaction
-opens in its explorer on screen. Every cell below marked `<!-- PENDING-TX: ... -->` gets filled
-in with the real hash and link after recording — never before, and never with a placeholder that
-looks real.
+opens in its explorer on screen. Every on-chain beat below links to a real testnet transaction.
 
 | Time | Screen | Voiceover (English) | Proves |
 |---|---|---|---|
