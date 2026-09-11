@@ -3,6 +3,7 @@ import type { CreateTransferTransactionInput } from '@circle-fin/developer-contr
 import { arcChain, settle, liveSettleDeps, type SettleDeps } from './treasury.js';
 
 const WALLET_ID = 'a635d679-4207-4e37-b12e-766afb9b3892';
+const TOKEN_ID = '15dc2b5d-0994-58b0-bf8c-3a0501148ee8';
 const TO = '0xa51c9c604b79a0fadbfed35dd576ca1bce71da0a';
 
 /**
@@ -35,7 +36,7 @@ describe('tesorería en Arc', () => {
 
   it('settle llama a createTransaction con el importe en decimal, el token nativo vacío y el walletId', async () => {
     const { client, calls } = fakeClient();
-    const deps: SettleDeps = { client, walletId: WALLET_ID };
+    const deps: SettleDeps = { client, walletId: WALLET_ID, tokenId: TOKEN_ID };
 
     const txId = await settle(deps, 2_000, TO, 'ref-1');
 
@@ -43,7 +44,8 @@ describe('tesorería en Arc', () => {
     expect(calls).toHaveLength(1);
     const input = calls[0]!;
     expect(input.amount).toEqual(['0.002']);
-    expect(input.tokenAddress).toBe('');
+    expect(input.tokenId).toBe(TOKEN_ID);
+    expect(input.tokenAddress).toBeUndefined();
     expect(input.destinationAddress).toBe(TO);
     expect(input.walletId).toBe(WALLET_ID);
     expect(input.fee).toEqual({ type: 'level', config: { feeLevel: 'MEDIUM' } });
@@ -51,7 +53,7 @@ describe('tesorería en Arc', () => {
 
   it('la misma ref produce siempre el mismo idempotencyKey', async () => {
     const { client, calls } = fakeClient();
-    const deps: SettleDeps = { client, walletId: WALLET_ID };
+    const deps: SettleDeps = { client, walletId: WALLET_ID, tokenId: TOKEN_ID };
 
     await settle(deps, 2_000, TO, 'pago-mismo-ref');
     await settle(deps, 2_000, TO, 'pago-mismo-ref');
@@ -63,7 +65,7 @@ describe('tesorería en Arc', () => {
 
   it('una ref distinta produce un idempotencyKey distinto', async () => {
     const { client, calls } = fakeClient();
-    const deps: SettleDeps = { client, walletId: WALLET_ID };
+    const deps: SettleDeps = { client, walletId: WALLET_ID, tokenId: TOKEN_ID };
 
     await settle(deps, 2_000, TO, 'ref-a');
     await settle(deps, 2_000, TO, 'ref-b');
@@ -73,7 +75,7 @@ describe('tesorería en Arc', () => {
 
   it('el idempotencyKey tiene forma de UUID v4', async () => {
     const { client, calls } = fakeClient();
-    const deps: SettleDeps = { client, walletId: WALLET_ID };
+    const deps: SettleDeps = { client, walletId: WALLET_ID, tokenId: TOKEN_ID };
 
     await settle(deps, 2_000, TO, 'cualquier-ref');
 
@@ -87,6 +89,7 @@ describe('liveSettleDeps', () => {
   const originalApiKey = process.env.CIRCLE_API_KEY;
   const originalEntitySecret = process.env.CIRCLE_ENTITY_SECRET;
   const originalWalletId = process.env.CIRCLE_WALLET_ID;
+  const originalTokenId = process.env.CIRCLE_USDC_TOKEN_ID;
 
   afterEach(() => {
     if (originalApiKey === undefined) delete process.env.CIRCLE_API_KEY;
@@ -95,6 +98,8 @@ describe('liveSettleDeps', () => {
     else process.env.CIRCLE_ENTITY_SECRET = originalEntitySecret;
     if (originalWalletId === undefined) delete process.env.CIRCLE_WALLET_ID;
     else process.env.CIRCLE_WALLET_ID = originalWalletId;
+    if (originalTokenId === undefined) delete process.env.CIRCLE_USDC_TOKEN_ID;
+    else process.env.CIRCLE_USDC_TOKEN_ID = originalTokenId;
   });
 
   it('lanza si falta CIRCLE_API_KEY', () => {
@@ -111,6 +116,15 @@ describe('liveSettleDeps', () => {
     process.env.CIRCLE_WALLET_ID = WALLET_ID;
 
     expect(() => liveSettleDeps()).toThrow(/CIRCLE_ENTITY_SECRET/);
+  });
+
+  it('lanza si falta CIRCLE_USDC_TOKEN_ID', () => {
+    process.env.CIRCLE_API_KEY = 'clave';
+    process.env.CIRCLE_ENTITY_SECRET = 'secreto';
+    process.env.CIRCLE_WALLET_ID = WALLET_ID;
+    delete process.env.CIRCLE_USDC_TOKEN_ID;
+
+    expect(() => liveSettleDeps()).toThrow(/CIRCLE_USDC_TOKEN_ID/);
   });
 
   it('lanza si falta CIRCLE_WALLET_ID', () => {

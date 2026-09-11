@@ -22,6 +22,7 @@ export const arcChain = defineChain({
 export type SettleDeps = {
   client: Pick<CircleDeveloperControlledWalletsClient, 'createTransaction'>;
   walletId: string;
+  tokenId: string;
 };
 
 /**
@@ -41,19 +42,15 @@ function idempotencyKeyFromRef(ref: string): string {
 /**
  * Liquida una consulta pagada en USDC nativo de Arc testnet desde la
  * Developer-Controlled Wallet de Circle identificada por `deps.walletId`.
- * `tokenAddress: ''` porque el USDC de Arc es nativo ("Empty for native
- * tokens", dist/types/developer-controlled-wallets.d.ts l.18/32 de
- * @circle-fin/developer-controlled-wallets 10.8.0). No se envía `blockchain`:
- * combinarlo con `walletId` no tipa contra el `CreateTransferTransactionInput`
- * real (l.330-353 del mismo fichero — la rama de `walletId` fija
- * `blockchain` a `never` vía intersección con `TokenInfo`); la wallet ya
- * quedó anclada a `ARC-TESTNET` al crearla, así que Circle la resuelve por
- * `walletId` sin necesidad de repetirla aquí.
+ * `tokenId` es el identificador de Circle del USDC nativo de Arc testnet, leído de la
+ * propia cartera (`getWalletTokenBalance`). Circle rechaza con "API parameter invalid"
+ * la forma `walletId` + `tokenAddress: ''`; la forma `walletId` + `tokenId` se probó
+ * con una transferencia real que llegó a COMPLETE en Arc testnet.
  */
 export async function settle(deps: SettleDeps, amountMicroUsdc: number, to: string, ref: string): Promise<string> {
   const response = await deps.client.createTransaction({
     walletId: deps.walletId,
-    tokenAddress: '',
+    tokenId: deps.tokenId,
     amount: [microUsdcToDecimal(amountMicroUsdc)],
     destinationAddress: to,
     fee: { type: 'level', config: { feeLevel: 'MEDIUM' } },
@@ -75,11 +72,13 @@ export function liveSettleDeps(): SettleDeps {
   const apiKey = process.env.CIRCLE_API_KEY;
   const entitySecret = process.env.CIRCLE_ENTITY_SECRET;
   const walletId = process.env.CIRCLE_WALLET_ID;
+  const tokenId = process.env.CIRCLE_USDC_TOKEN_ID;
   if (!apiKey) throw new Error('CIRCLE_API_KEY no configurada: no se puede liquidar en Arc de verdad');
   if (!entitySecret) throw new Error('CIRCLE_ENTITY_SECRET no configurada: no se puede liquidar en Arc de verdad');
   if (!walletId) throw new Error('CIRCLE_WALLET_ID no configurada: no se puede liquidar en Arc de verdad');
+  if (!tokenId) throw new Error('CIRCLE_USDC_TOKEN_ID no configurada: no se puede liquidar en Arc de verdad');
   const client = initiateDeveloperControlledWalletsClient({ apiKey, entitySecret });
-  return { client, walletId };
+  return { client, walletId, tokenId };
 }
 
 /**
