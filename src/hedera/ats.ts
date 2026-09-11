@@ -20,10 +20,15 @@ const ATS_FACTORY_ID = process.env.ATS_FACTORY_ID ?? '0.0.9213391';
 const ATS_RESOLVER_ID = process.env.ATS_RESOLVER_ID ?? '0.0.9212226';
 const HEDERA_RPC_RELAY = process.env.HEDERA_RPC_RELAY ?? 'https://testnet.hashio.io/api';
 
-// Verificado en vivo (eth_getCode idéntico en la dirección long-zero y en el alias real que
-// reporta el mirror node) — ver hedera-id.ts.
-const FACTORY_ADDRESS = hederaIdToEvmAddress(ATS_FACTORY_ID);
-const RESOLVER_ADDRESS = hederaIdToEvmAddress(ATS_RESOLVER_ID);
+// La factory y el resolver se llaman por su alias EVM real (el `evm_address` que reporta el
+// mirror node), no por la dirección long-zero derivada del id: `deployBond` compara el resolver
+// con el alias y revierte sin datos si recibe la forma long-zero. Comprobado simulando
+// `deployBond` contra el mirror node con ambas formas y contra un despliegue real con éxito.
+// Si se sobrescriben los ids por entorno, hay que dar también los alias correspondientes.
+const ATS_FACTORY_EVM_ADDRESS = (process.env.ATS_FACTORY_EVM_ADDRESS ?? '0xd1f118a40f3b02883d35909ef2517e7edd78379d') as Hex;
+const ATS_RESOLVER_EVM_ADDRESS = (process.env.ATS_RESOLVER_EVM_ADDRESS ?? '0xba2d5fc2083a0b8f164c50e65d782087fba18e0a') as Hex;
+const FACTORY_ADDRESS = ATS_FACTORY_EVM_ADDRESS;
+const RESOLVER_ADDRESS = ATS_RESOLVER_EVM_ADDRESS;
 
 export const HEDERA_TESTNET_CHAIN_ID = 296;
 

@@ -35,7 +35,7 @@ describe('buildBondData', () => {
   });
 
   it('apunta al resolver público de ATS en testnet', () => {
-    expect(bondData.security.resolver).toBe(hederaIdToEvmAddress('0.0.9212226'));
+    expect(bondData.security.resolver).toBe('0xba2d5fc2083a0b8f164c50e65d782087fba18e0a');
   });
 
   it('fija maxSupply al importe de la nota en microUSDC', () => {
@@ -184,7 +184,7 @@ describe('issueNoteOnChain', () => {
 
     const deployCall = calls[0]!;
     expect(deployCall.functionName).toBe('deployBond');
-    expect(deployCall.address).toBe(hederaIdToEvmAddress('0.0.9213391'));
+    expect(deployCall.address).toBe('0xd1f118a40f3b02883d35909ef2517e7edd78379d');
 
     const issueCall = calls[1]!;
     expect(issueCall.functionName).toBe('issue');
