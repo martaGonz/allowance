@@ -187,6 +187,7 @@ the funded run; nothing here is simulated or fabricated in advance.
   `src/accounting/` tracks that. A revoke burns whatever is left unspent at that moment; natural
   exhaustion (the note running to zero on its own) does not trigger an on-chain burn, because
   nothing needs revoking that hasn't already stopped the agent off-chain.
+- **The Messari Standardized Subgraph does not fill `liquidityUSD` for Uniswap v3 positions** (it reads `0`), and its largest pools by reported TVL are spam with nonsensical figures. The agent therefore reasons with raw `liquidity` and the token USD prices, and the demo watches an open position in the WETH/USDC 0.05% pool on Base (`0xd0b53d9277642d899df5c87a3966a349a798f224`).
 - **The Claude analyst is optional and advisory only.** It never decides to spend — `decide()`
   does, always — and if it refuses or fails, the agent keeps paying and stopping exactly as it
   would otherwise.
