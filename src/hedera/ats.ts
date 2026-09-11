@@ -572,6 +572,7 @@ export function liveAtsDeps(): AtsDeps {
           abi: call.abi,
           functionName: call.functionName,
           args: call.args,
+          ...(call.gas !== undefined ? { gas: call.gas } : {}),
           account,
           chain: hederaTestnetChain,
         } as Parameters<typeof walletClient.writeContract>[0]),
