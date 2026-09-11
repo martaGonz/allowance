@@ -43,7 +43,12 @@ function textMessage(text: string, stopReason: Anthropic.Beta.BetaStopReason = '
 
 describe('cleanSummary', () => {
   it('quita las barras de escape de Markdown sin tocar el resto', () => {
-    expect(cleanSummary('WATCH — WETH a \\$2,578.99 y `liquidityUsd` en \\*cero\\*')).toBe('WATCH — WETH a $2,578.99 y `liquidityUsd` en *cero*');
+    expect(cleanSummary('WATCH — WETH a \\$2,578.99 y `liquidityUsd` en \\*cero\\*')).toBe('WETH a $2,578.99 y `liquidityUsd` en *cero*');
+  });
+
+  it('quita el nivel del principio porque el panel ya lo muestra, sin tocar palabras que solo empiezan igual', () => {
+    expect(cleanSummary('ACT: the position is blind')).toBe('the position is blind');
+    expect(cleanSummary('Actually the position is fine')).toBe('Actually the position is fine');
   });
 });
 

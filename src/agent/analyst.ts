@@ -59,7 +59,11 @@ function parseLevel(text: string): AnalystLevel {
  * así que se retiran esas barras para que no aparezcan en pantalla.
  */
 export function cleanSummary(text: string): string {
-  return text.trim().replace(/\\([$*_`#~>\[\]()])/g, '$1');
+  return text
+    .trim()
+    .replace(/\\([$*_`#~>\[\]()])/g, '$1')
+    // El nivel ya se muestra aparte en el panel: se quita del principio para no repetirlo.
+    .replace(/^(?:OK|WATCH|ACT|VIGILAR|ACTUAR)\b\s*[—:–-]?\s*/i, '');
 }
 
 export async function analyzePosition(deps: AnalystDeps, facts: PositionFacts): Promise<AnalystResult> {
