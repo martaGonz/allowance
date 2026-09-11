@@ -280,6 +280,7 @@ describe('burnNoteOnChain', () => {
     const call = calls[0]!;
     expect(call.address).toBe(BOND_ADDRESS);
     expect(call.functionName).toBe('controllerRedeemByPartition');
+    expect(call.gas).toBe(1_000_000n);
     expect(call.args).toEqual([DEFAULT_PARTITION, AGENT, 2_500_000n, '0x', '0x']);
     expect(txHash).toBeTruthy();
   });

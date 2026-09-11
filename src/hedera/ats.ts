@@ -32,6 +32,8 @@ const RESOLVER_ADDRESS = ATS_RESOLVER_EVM_ADDRESS;
 
 export const HEDERA_TESTNET_CHAIN_ID = 296;
 
+export const BURN_GAS_LIMIT = 1_000_000n;
+
 export const hederaTestnetChain = defineChain({
   id: HEDERA_TESTNET_CHAIN_ID,
   name: 'Hedera Testnet',
@@ -404,6 +406,7 @@ export type AtsWriteContractCall = {
   abi: readonly unknown[];
   functionName: string;
   args: readonly unknown[];
+  gas?: bigint;
 };
 
 export type AtsLog = { address: Hex; topics: readonly Hex[]; data: Hex };
@@ -520,6 +523,9 @@ export async function burnNoteOnChain(
     abi: ASSET_ABI,
     functionName: 'controllerRedeemByPartition',
     args: [DEFAULT_PARTITION, agent, BigInt(amountMicroUsdc), '0x', '0x'],
+    // La estimación del relay se queda corta y la quema revierte con INSUFFICIENT_GAS
+    // (gas usado ≈203 000 en la primera quema real); se fija un límite con margen.
+    gas: BURN_GAS_LIMIT,
   });
 
   // Hallazgo importante 5: sin esto, una revocación que revierte en cadena se publicaba
