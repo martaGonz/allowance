@@ -28,7 +28,7 @@ export const livePay = async (
 };
 
 /**
- * Adaptador entre `AgentDeps.settle` y `settle`. la
+ * Adaptador entre `AgentDeps.settle` y `settle`. La
  * firma real exige una `ref` para la clave de idempotencia de Circle; run.ts
  * ya se la pasa (el txId del pago x402, o un id determinista de intento).
  * `ARC_OPERATOR_ADDRESS` y las credenciales de Circle (vía `liveSettleDeps`)
