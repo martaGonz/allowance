@@ -172,8 +172,8 @@ the funded run; nothing here is simulated or fabricated in advance.
 
 | Proof | Explorer | Link |
 |---|---|---|
-| ATS bond deployment (`deployBond`) | HashScan testnet | <!-- PENDING-TX: ats-bond-deploy --> |
-| ATS issue to the agent (`issue`) | HashScan testnet | <!-- PENDING-TX: ats-issue --> |
+| ATS bond deployment (`deployBond`) | HashScan testnet | [deployBond](https://hashscan.io/testnet/transaction/0x3020f40e93ece3dbd3aba7ae5d149e422060db4ae0bd2c8a0822d11f51697f13) → [bond contract](https://hashscan.io/testnet/contract/0x595e5f93d1e48f822AC5bDB9F14AB4A2FCf8d365) |
+| ATS issue to the agent (`issue`) | HashScan testnet | [issue to the agent](https://hashscan.io/testnet/transaction/0xac81cd9ccf2aca4b61f65d39feddb385baffbd410a20138acd08dee75e35df7b) |
 | x402 payment settled by Blocky402 (fee payer `0.0.7162784`) | HashScan testnet | <!-- PENDING-TX: x402-payment --> |
 | Arc settlement from the Circle wallet | Arcscan testnet | <!-- PENDING-TX: arc-settlement --> |
 | ATS burn on revoke (`controllerRedeemByPartition`) | HashScan testnet | <!-- PENDING-TX: ats-burn --> |
