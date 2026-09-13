@@ -120,6 +120,7 @@
 
   .step.on { opacity: 1; border-top-color: var(--accent); }
   .step.link { cursor: pointer; }
+  .step .cover { position: absolute; inset: 0; border-radius: 12px; z-index: 1; }
   .step.link:hover { border-color: var(--accent); }
   .step.link .stat::after { content: ' ↗'; color: var(--accent); font-size: 16px; }
   .step.pulse { animation: pulse 0.9s ease-out; }
@@ -503,10 +504,20 @@
       el.classList.add('pulse');
     }
 
-    // Una tarjeta del recorrido con transacción abre esa transacción en su explorador.
+    // Una tarjeta del recorrido con transacción abre esa transacción en su explorador: un enlace
+    // real que cubre la tarjeta, para que el navegador no lo trate como ventana emergente.
     function linkStep(step, href) {
       var el = byId('step-' + step);
-      el.dataset.href = href;
+      var cover = el.querySelector('a.cover');
+      if (!cover) {
+        cover = document.createElement('a');
+        cover.className = 'cover';
+        cover.target = '_blank';
+        cover.rel = 'noopener noreferrer';
+        el.appendChild(cover);
+      }
+      cover.href = href;
+      cover.setAttribute('aria-label', el.querySelector('.title').textContent);
       el.classList.add('link');
     }
 
@@ -791,11 +802,6 @@
       };
       source.onmessage = function (e) { handleEvent(JSON.parse(e.data), false); };
     }
-
-    document.querySelector('.flow').addEventListener('click', function (e) {
-      var step = e.target.closest('.step');
-      if (step && step.dataset.href) window.open(step.dataset.href, '_blank', 'noopener');
-    });
 
     els.revokeBtn.addEventListener('click', function () {
       els.revokeBtn.disabled = true;

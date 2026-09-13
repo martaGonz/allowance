@@ -1,3 +1,12 @@
+<p align="center">
+  <img src="docs/logos/the-graph.png" alt="The Graph" title="The Graph" height="56">&nbsp;&nbsp;&nbsp;
+  <img src="docs/logos/hedera.png" alt="Hedera" title="Hedera" height="56">&nbsp;&nbsp;&nbsp;
+  <img src="docs/logos/circle.png" alt="Circle" title="Circle" height="56">&nbsp;&nbsp;&nbsp;
+  <img src="docs/logos/arc.png" alt="Arc" title="Arc" height="56">&nbsp;&nbsp;&nbsp;
+  <img src="docs/logos/anthropic.png" alt="Claude by Anthropic" title="Claude by Anthropic" height="56">
+</p>
+<p align="center"><sub>Built on The Graph · Hedera · Circle · Arc · Claude</sub></p>
+
 # Allowance
 
 **An agent shouldn't hold keys. It should get an allowance.**
