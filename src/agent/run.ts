@@ -28,7 +28,11 @@ export type AgentEvent =
   | { kind: 'issued_onchain'; bondAddress: Hex; deployTx: Hex; issueTx: Hex }
   | { kind: 'issue_onchain_failed'; error: string }
   | { kind: 'burned_onchain'; txHash: Hex }
-  | { kind: 'burn_onchain_failed'; error: string };
+  | { kind: 'burn_onchain_failed'; error: string }
+  // La liquidación en Arc ya confirmada en cadena. La emite main.ts cuando Circle devuelve el
+  // hash, sin frenar el bucle; igual que los anteriores, es solo informativa para el panel.
+  | { kind: 'settled_onchain'; amountMicroUsdc: number; txHash: string }
+  | { kind: 'settlement_hash_failed'; error: string };
 
 export type AgentDeps = {
   /** La nota vive en un almacén compartido con el panel, no en una copia local. */

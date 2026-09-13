@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type { CreateTransferTransactionInput } from '@circle-fin/developer-controlled-wallets';
-import { arcChain, settle, liveSettleDeps, type SettleDeps } from './treasury.js';
+import { arcChain, settle, settlementTxHash, liveSettleDeps, type SettleDeps } from './treasury.js';
 
 const WALLET_ID = 'a635d679-4207-4e37-b12e-766afb9b3892';
 const TOKEN_ID = '15dc2b5d-0994-58b0-bf8c-3a0501148ee8';
@@ -133,5 +133,18 @@ describe('liveSettleDeps', () => {
     delete process.env.CIRCLE_WALLET_ID;
 
     expect(() => liveSettleDeps()).toThrow(/CIRCLE_WALLET_ID/);
+  });
+
+  it('settlementTxHash espera el hash de la liquidación en Circle y lo devuelve', async () => {
+    const inputs: Record<string, unknown>[] = [];
+    const client = {
+      getTransaction: async (input: Record<string, unknown>) => {
+        inputs.push(input);
+        return { data: { transaction: { txHash: '0xabc123' } } };
+      },
+    } as unknown as Parameters<typeof settlementTxHash>[0];
+
+    await expect(settlementTxHash(client, 'circle-tx-1')).resolves.toBe('0xabc123');
+    expect(inputs[0]).toMatchObject({ id: 'circle-tx-1', waitForTxHash: true });
   });
 });

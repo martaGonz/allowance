@@ -2,7 +2,7 @@ import type { Hex } from 'viem';
 import { createNote, type Note } from '../accounting/note.js';
 import { createNoteStore } from './note-store.js';
 import { runAgent, type AgentDeps } from './run.js';
-import { livePay, liveSettle, liveAnalyst } from './live.js';
+import { livePay, liveSettle, liveSettlementHash, liveAnalyst } from './live.js';
 import { TOOLS } from '../graph/tools.js';
 import { createEventBus, startPanel, type EventBus, type OnChainBurn } from '../panel/server.js';
 import { issueNoteOnChain, burnNoteOnChain, liveAtsDeps } from '../hedera/ats.js';
@@ -109,7 +109,14 @@ async function main(): Promise<void> {
     tools: TOOLS,
     watch,
     pay: livePay,
-    settle: liveSettle,
+    settle: async (amountMicroUsdc, ref) => {
+      const id = await liveSettle(amountMicroUsdc, ref);
+      // El hash en Arc llega unos segundos después: se espera aparte para no frenar el bucle.
+      liveSettlementHash(id)
+        .then((txHash) => bus.publish({ kind: 'settled_onchain', amountMicroUsdc, txHash }))
+        .catch((error: unknown) => bus.publish({ kind: 'settlement_hash_failed', error: String(error) }));
+      return id;
+    },
     wait,
     now: () => Date.now(),
     ...(process.env.ANTHROPIC_API_KEY ? { analyst: liveAnalyst() } : {}),

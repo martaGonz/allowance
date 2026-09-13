@@ -62,13 +62,32 @@ export async function settle(deps: SettleDeps, amountMicroUsdc: number, to: stri
 }
 
 /**
+ * Espera a que la liquidación de Circle tenga hash en Arc testnet y lo devuelve, para poder
+ * enlazarla en Arcscan. Una cartera EOA ya tiene hash en estado SENT, así que suele llegar en
+ * pocos segundos; si Circle la marca como fallida, o pasa `timeoutMs`, la promesa rechaza.
+ */
+export async function settlementTxHash(
+  client: Pick<CircleDeveloperControlledWalletsClient, 'getTransaction'>,
+  id: string,
+  timeoutMs = 60_000,
+): Promise<string> {
+  const response = await client.getTransaction({
+    id,
+    waitForTxHash: true,
+    pollingInterval: 1_000,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return response.data.transaction.txHash;
+}
+
+/**
  * Construye el `SettleDeps` real leyendo las credenciales de Circle dentro
  * de la función: nada del SDK se construye al cargar el módulo. Sin
  * fallback silencioso a viem — si falta cualquiera de las tres variables,
  * lanza en vez de liquidar con una cartera equivocada o no liquidar en
  * absoluto sin que se note.
  */
-export function liveSettleDeps(): SettleDeps {
+export function liveSettleDeps(): SettleDeps & { client: CircleDeveloperControlledWalletsClient } {
   const apiKey = process.env.CIRCLE_API_KEY;
   const entitySecret = process.env.CIRCLE_ENTITY_SECRET;
   const walletId = process.env.CIRCLE_WALLET_ID;

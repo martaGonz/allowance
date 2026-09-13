@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { payAndRetry } from '../gate/pay.js';
-import { settle as settleOnArc, liveSettleDeps } from '../arc/treasury.js';
+import { settle as settleOnArc, liveSettleDeps, settlementTxHash } from '../arc/treasury.js';
 import { buildGateUrl } from '../mcp/gate-url.js';
 import type { ToolSpec } from '../graph/tools.js';
 import type { AnalystDeps } from './analyst.js';
@@ -41,6 +41,9 @@ export const liveSettle = async (amountMicroUsdc: number, ref: string): Promise<
   }
   return settleOnArc(liveSettleDeps(), amountMicroUsdc, operator, ref);
 };
+
+/** Hash en Arc de una liquidación ya creada, para enlazarla en Arcscan desde el panel. */
+export const liveSettlementHash = (id: string): Promise<string> => settlementTxHash(liveSettleDeps().client, id);
 
 /**
  * Construye el analista real. `new Anthropic()` resuelve
