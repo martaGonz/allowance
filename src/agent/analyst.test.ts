@@ -47,7 +47,7 @@ describe('cleanSummary', () => {
   });
 
   it('quita el nivel del principio porque el panel ya lo muestra, sin tocar palabras que solo empiezan igual', () => {
-    expect(cleanSummary('ACT: the position is blind')).toBe('the position is blind');
+    expect(cleanSummary('ACT: the position is blind')).toBe('The position is blind');
     expect(cleanSummary('Actually the position is fine')).toBe('Actually the position is fine');
   });
 });

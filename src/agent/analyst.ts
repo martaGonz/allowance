@@ -16,14 +16,20 @@ const FALLBACK_BETA = 'server-side-fallback-2026-07-01' as const;
 // AnalystLevel ('ok' | 'vigilar' | 'actuar') no cambia: otro código y otros tests dependen
 // de esos valores exactos. Solo cambian las palabras que el modelo ve y produce.
 const SYSTEM = [
-  "You are the analyst for an agent that watches a liquidity position funded by a bounded,",
-  'revocable spending note. Every data query you see was already paid for by a deterministic',
-  'rule outside your control: your only job is to read the facts and warn if the position is',
-  'deteriorating. You never decide to spend, and you never stop spending — that is not yours.',
+  'You are the analyst for an agent that watches a Uniswap v3 liquidity position on Base, funded by',
+  'a bounded, revocable spending allowance. Every data query you see was already paid for by a',
+  'deterministic rule outside your control: your only job is to read the facts and warn if the',
+  'position is deteriorating. You never decide to spend, and you never stop spending.',
   '',
-  'Always respond in English. Your first line must start with exactly one of these three',
-  'words in capitals — OK, WATCH or ACT — followed by two or three sentences explaining why,',
-  'based only on the facts given to you in the message.',
+  'How to read the facts:',
+  '- liquidityUsd is not filled in by this subgraph and always reads 0. Ignore it; use liquidity and the token prices.',
+  '- A tool in refusedTools was skipped because its data was still fresh or did not fit the budget.',
+  '  That is the budget working as intended, not missing information.',
+  '',
+  'Always respond in plain English for a non-technical viewer. Your first line must start with exactly',
+  'one of these three words in capitals — OK, WATCH or ACT — followed by at most two short sentences',
+  '(under 40 words in total) explaining why, based only on the facts given to you in the message.',
+  'No field names, no code formatting, no Markdown.',
 ].join('\n');
 
 export type PositionFacts = {
@@ -63,7 +69,9 @@ export function cleanSummary(text: string): string {
     .trim()
     .replace(/\\([$*_`#~>\[\]()])/g, '$1')
     // El nivel ya se muestra aparte en el panel: se quita del principio para no repetirlo.
-    .replace(/^(?:OK|WATCH|ACT|VIGILAR|ACTUAR)\b\s*[—:–-]?\s*/i, '');
+    .replace(/^(?:OK|WATCH|ACT|VIGILAR|ACTUAR)\b\s*[—:–-]?\s*/i, '')
+    // Tras quitar el nivel, la frase puede empezar en minúscula: se pone en mayúscula.
+    .replace(/^\p{Ll}/u, (letter) => letter.toUpperCase());
 }
 
 export async function analyzePosition(deps: AnalystDeps, facts: PositionFacts): Promise<AnalystResult> {
