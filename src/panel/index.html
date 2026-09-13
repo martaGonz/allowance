@@ -44,6 +44,25 @@
 
   header .tagline { color: var(--text); font-size: 17px; opacity: 0.85; }
 
+  .header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+  .built-on { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .built-on .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-right: 2px; }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px 5px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .logo svg { width: 20px; height: 20px; flex-shrink: 0; }
+
   .live {
     display: inline-flex;
     align-items: center;
@@ -100,6 +119,9 @@
   }
 
   .step.on { opacity: 1; border-top-color: var(--accent); }
+  .step.link { cursor: pointer; }
+  .step.link:hover { border-color: var(--accent); }
+  .step.link .stat::after { content: ' ↗'; color: var(--accent); font-size: 16px; }
   .step.pulse { animation: pulse 0.9s ease-out; }
 
   @keyframes pulse {
@@ -298,6 +320,7 @@
   #log-list li.settled { border-left-color: var(--arc); }
   #log-list li a { color: var(--blue); text-decoration: none; font-weight: 600; }
   #log-list li a:hover { text-decoration: underline; }
+  #log-list li .count { margin-left: 8px; font-weight: 700; color: var(--red); }
 
   .hidden { display: none !important; }
 
@@ -313,7 +336,17 @@
     <h1>Allowance</h1>
     <div class="tagline">An agent shouldn't hold keys. It should get an allowance.</div>
   </div>
-  <span id="live" class="live">connecting…</span>
+  <div class="header-right">
+    <div class="built-on">
+      <span class="label">Built on</span>
+      <span class="logo"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="#b690ff"/><path d="M6.5 5v10M13.5 5v10M6.5 8.3h7M6.5 11.7h7" stroke="#0b0d12" stroke-width="1.8" stroke-linecap="round"/></svg>Hedera</span>
+      <span class="logo"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="#7b8cff"/><circle cx="9" cy="9" r="3.6" fill="none" stroke="#0b0d12" stroke-width="1.8"/><path d="M11.7 11.7l3 3" stroke="#0b0d12" stroke-width="1.8" stroke-linecap="round"/></svg>The Graph</span>
+      <span class="logo"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="#2fd4bd"/><circle cx="10" cy="10" r="5.5" fill="none" stroke="#0b0d12" stroke-width="1.8"/><circle cx="10" cy="10" r="2.2" fill="#0b0d12"/></svg>Circle</span>
+      <span class="logo"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="#5aa9ef"/><path d="M5.5 14.5V11a4.5 4.5 0 0 1 9 0v3.5" fill="none" stroke="#0b0d12" stroke-width="1.8" stroke-linecap="round"/></svg>Arc</span>
+      <span class="logo"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="10" fill="#e89a72"/><path d="M10 4.5v11M4.5 10h11M6.1 6.1l7.8 7.8M13.9 6.1l-7.8 7.8" stroke="#0b0d12" stroke-width="1.7" stroke-linecap="round"/></svg>Claude</span>
+    </div>
+    <span id="live" class="live">connecting…</span>
+  </div>
 </header>
 
 <div class="flow">
@@ -470,6 +503,13 @@
       el.classList.add('pulse');
     }
 
+    // Una tarjeta del recorrido con transacción abre esa transacción en su explorador.
+    function linkStep(step, href) {
+      var el = byId('step-' + step);
+      el.dataset.href = href;
+      el.classList.add('link');
+    }
+
     function renderCounters() {
       byId('count-paid').textContent = counts.paid;
       byId('count-refused').textContent = counts.refused;
@@ -532,7 +572,12 @@
     // Cada línea del registro se construye con createElement/textContent, nunca innerHTML: los
     // hashes, errores y resúmenes llegan por el bus de eventos y son datos, no marcado.
     // `parts` mezcla texto, { strong } y enlaces { label, href }.
+    // Rechazos repetidos (misma consulta, mismo motivo) se agrupan en una sola línea con "×N"
+    // hasta que ocurre cualquier otra cosa, para que el registro no se llene de la misma frase.
+    var refusedLines = {};
+
     function addLog(cls, tags, parts) {
+      if (cls !== 'refused') refusedLines = {};
       var li = document.createElement('li');
       li.className = cls;
       var tagBox = document.createElement('span');
@@ -567,6 +612,27 @@
       while (els.logList.children.length > LOG_LIMIT) {
         els.logList.removeChild(els.logList.lastChild);
       }
+      return li;
+    }
+
+    function addRefused(tool, priceMicroUsdc, reason) {
+      var key = tool + '|' + reason;
+      var line = refusedLines[key];
+      if (line && line.li.parentNode) {
+        line.n += 1;
+        line.count.textContent = '×' + line.n;
+        els.logList.insertBefore(line.li, els.logList.firstChild);
+        return;
+      }
+      var li = addLog('refused', ['rule'], [
+        toolName(tool) + ' · ' + usd(priceMicroUsdc) + ' · ',
+        { strong: 'REFUSED' },
+        ' — ' + reason,
+      ]);
+      var count = document.createElement('span');
+      count.className = 'count';
+      li.lastChild.appendChild(count);
+      refusedLines[key] = { li: li, n: 1, count: count };
     }
 
     function setAnalyst(level, summary) {
@@ -589,11 +655,7 @@
             renderCounters();
             lightStep('rule', counts.refused + ' refused');
             var reason = event.decision.reason === 'too_expensive' ? 'too expensive right now' : 'data is still fresh';
-            addLog('refused', ['rule'], [
-              toolName(event.tool) + ' · ' + usd(event.priceMicroUsdc) + ' · ',
-              { strong: 'REFUSED' },
-              ' — ' + reason,
-            ]);
+            addRefused(event.tool, event.priceMicroUsdc, reason);
           }
           break;
         }
@@ -606,6 +668,7 @@
           lightStep('data', counts.paid + ' answers');
           var parts = [toolName(event.tool) + ' paid with x402, settled by Blocky402 · data from The Graph · '];
           if (event.txId) {
+            linkStep('pay', HASHSCAN_TESTNET + '/transaction/' + event.txId);
             parts.push({ label: 'HashScan ↗', href: HASHSCAN_TESTNET + '/transaction/' + event.txId });
           } else {
             parts.push('no receipt');
@@ -618,6 +681,7 @@
           counts.settled += 1;
           renderCounters();
           lightStep('arc', counts.settled + ' settled');
+          linkStep('arc', ARCSCAN_TESTNET + '/tx/' + event.txHash);
           addLog('settled', ['arc'], [
             'Settled ' + usd(event.amountMicroUsdc) + ' in USDC from the Circle wallet · ',
             { label: 'Arcscan ↗', href: ARCSCAN_TESTNET + '/tx/' + event.txHash },
@@ -651,6 +715,7 @@
         }
         case 'issued_onchain': {
           lightStep('issue', 'issued');
+          linkStep('issue', HASHSCAN_TESTNET + '/transaction/' + event.issueTx);
           addLog('onchain', ['hedera'], [
             'Allowance token issued to the agent (ATS bond) · ',
             { label: 'contract ↗', href: HASHSCAN_TESTNET + '/contract/' + event.bondAddress },
@@ -667,6 +732,7 @@
           state.burnedOnChain = true;
           renderBudget();
           lightStep('revoke', 'burned');
+          linkStep('revoke', HASHSCAN_TESTNET + '/transaction/' + event.txHash);
           addLog('onchain', ['hedera'], [
             'Allowance token burned on-chain · ',
             { label: 'HashScan ↗', href: HASHSCAN_TESTNET + '/transaction/' + event.txHash },
@@ -725,6 +791,11 @@
       };
       source.onmessage = function (e) { handleEvent(JSON.parse(e.data), false); };
     }
+
+    document.querySelector('.flow').addEventListener('click', function (e) {
+      var step = e.target.closest('.step');
+      if (step && step.dataset.href) window.open(step.dataset.href, '_blank', 'noopener');
+    });
 
     els.revokeBtn.addEventListener('click', function () {
       els.revokeBtn.disabled = true;
