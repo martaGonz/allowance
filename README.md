@@ -166,9 +166,8 @@ reachable from other machines) and the spending loop together; point it at the g
 
 ## On-chain evidence
 
-No real transaction exists yet — the Hedera and Arc testnet accounts used for the demo are not
-funded at the time of writing. Each row below will be filled in with a real explorer link after
-the funded run; nothing here is simulated or fabricated in advance.
+Every row below is a real testnet transaction from the demo run, linked to its block explorer.
+Nothing here is simulated.
 
 | Proof | Explorer | Link |
 |---|---|---|
